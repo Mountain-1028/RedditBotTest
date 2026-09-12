@@ -1,0 +1,6 @@
+kokoro-onnx
+soundfile
+numpy
+openai
+python-dotenv
+requests

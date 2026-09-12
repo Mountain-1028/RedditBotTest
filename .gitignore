@@ -1,0 +1,29 @@
+# Secrets -- never commit real credentials
+.env
+
+# Large model files (re-downloaded per README, not synced via git)
+models/*.onnx
+models/*.bin
+
+# Generated/scratch content
+output/
+logs/
+assets/*
+!assets/gameplay/
+assets/gameplay/*
+!assets/gameplay/.gitkeep
+!assets/music/
+assets/music/*
+!assets/music/.gitkeep
+Claude outputs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
+
+# Claude Code internal session state
+.claude/
