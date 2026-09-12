@@ -52,9 +52,9 @@ output/ready_to_post/   finished videos + caption text, ready to upload
 logs/              per-run logs + the used-posts history
 ```
 
-## Thumbnail generation (JewProxy)
+## Thumbnail generation
 
-`scripts/image_gen.py` calls your JewProxy image gateway (OpenAI-compatible `/generations` endpoint) to generate a custom thumbnail per video instead of just grabbing a stock frame. Add `JEWPROXY_API_KEY` to `.env` to use it; `JEWPROXY_IMAGE_MODEL` defaults to `nano-banana-lite` (cheap/fast) -- bump to `nano-banana-pro`, `gpt-image-2.5-sunburst`, `seedream-4.5` etc. for higher quality when it's worth the cost. Not yet wired into `run_pipeline.py` automatically -- test it standalone first (`python3 scripts/image_gen.py "your prompt"`), then say the word and I'll hook it into the orchestrator so every video gets one automatically.
+`scripts/image_gen.py` calls an image-generation gateway (OpenAI-compatible `/generations` endpoint) to generate a custom thumbnail per video instead of just grabbing a stock frame. Add `IMAGE_GATEWAY_API_KEY` and `IMAGE_GATEWAY_BASE_URL` to `.env` to use it; `IMAGE_GATEWAY_MODEL` defaults to `nano-banana-lite` (cheap/fast) -- bump to `nano-banana-pro`, `gpt-image-2.5-sunburst`, `seedream-4.5` etc. for higher quality when it's worth the cost. Not yet wired into `run_pipeline.py` automatically -- test it standalone first (`python3 scripts/image_gen.py "your prompt"`), then say the word and I'll hook it into the orchestrator so every video gets one automatically.
 
 ## What's next
 

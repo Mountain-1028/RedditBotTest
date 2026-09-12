@@ -45,6 +45,11 @@ KOKORO_VOICE = _require("KOKORO_VOICE", "af_heart")
 REDDIT_CLIENT_ID = _require("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = _require("REDDIT_CLIENT_SECRET")
 
+# Optional image-generation gateway for scripts/image_gen.py (thumbnail generation).
+IMAGE_GATEWAY_API_KEY = _require("IMAGE_GATEWAY_API_KEY")
+IMAGE_GATEWAY_BASE_URL = _require("IMAGE_GATEWAY_BASE_URL")
+IMAGE_GATEWAY_MODEL = _require("IMAGE_GATEWAY_MODEL", "nano-banana-lite")
+
 ASSETS_DIR = PROJECT_ROOT / "assets"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 READY_DIR = PROJECT_ROOT / "output" / "ready_to_post"

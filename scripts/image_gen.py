@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Client for the JewProxy image-generation gateway (OpenAI-compatible
+Client for the image-generation gateway (OpenAI-compatible
 /v1/images/generations). Used for custom thumbnail generation -- the one
 visual asset per video that stock footage can't really provide, since a
 thumbnail needs to be a single deliberately composed, eye-catching frame.
 
 Docs given:
-  Base URL: https://jewproxy.tech/proxy/images/v1
+  Base URL: {IMAGE_GATEWAY_BASE_URL}
   List:     GET  {base}/models
   Generate: POST {base}/generations
-  Auth:     Authorization: Bearer <JEWPROXY_API_KEY>
+  Auth:     Authorization: Bearer <IMAGE_GATEWAY_API_KEY>
 
 Some display names differ from the model id the API actually expects --
 mapped below from what was shown in the model table. Everything else
@@ -33,13 +33,13 @@ MODEL_ID_OVERRIDES = {
 
 
 def _headers():
-    if not config.JEWPROXY_API_KEY:
-        raise RuntimeError("JEWPROXY_API_KEY not set in .env")
-    return {"Authorization": f"Bearer {config.JEWPROXY_API_KEY}"}
+    if not config.IMAGE_GATEWAY_API_KEY:
+        raise RuntimeError("IMAGE_GATEWAY_API_KEY not set in .env")
+    return {"Authorization": f"Bearer {config.IMAGE_GATEWAY_API_KEY}"}
 
 
 def list_models():
-    r = requests.get(f"{config.JEWPROXY_IMAGES_BASE_URL}/models", headers=_headers(), timeout=30)
+    r = requests.get(f"{config.IMAGE_GATEWAY_BASE_URL}/models", headers=_headers(), timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -47,21 +47,21 @@ def list_models():
 def generate_image(prompt: str, out_path: Path, model: str = None, size: str = "1024x1792") -> Path:
     """size defaults to a portrait ratio close to 9:16; not all backend models
     are guaranteed to honor it exactly -- we crop/pad in assembly if needed."""
-    model = model or config.JEWPROXY_IMAGE_MODEL
+    model = model or config.IMAGE_GATEWAY_MODEL
     api_model = MODEL_ID_OVERRIDES.get(model, model)
 
     resp = requests.post(
-        f"{config.JEWPROXY_IMAGES_BASE_URL}/generations",
+        f"{config.IMAGE_GATEWAY_BASE_URL}/generations",
         headers={**_headers(), "Content-Type": "application/json"},
         json={"model": api_model, "prompt": prompt, "size": size, "n": 1},
         timeout=120,
     )
     if resp.status_code != 200:
-        raise RuntimeError(f"JewProxy image gen failed ({resp.status_code}): {resp.text[:500]}")
+        raise RuntimeError(f"Image gateway request failed ({resp.status_code}): {resp.text[:500]}")
 
     data = resp.json().get("data", [])
     if not data:
-        raise RuntimeError(f"JewProxy image gen returned no data: {resp.text[:500]}")
+        raise RuntimeError(f"Image gateway returned no data: {resp.text[:500]}")
 
     item = data[0]
     out_path.parent.mkdir(parents=True, exist_ok=True)
