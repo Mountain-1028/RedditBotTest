@@ -125,9 +125,22 @@ def pick_queued_post() -> dict | None:
 
         post_id = data.get("id") or f.stem
         selftext = _clean_selftext(data.get("selftext", ""))
-        if post_id in used_ids or not selftext:
+        image_urls = data.get("image_urls") or []
+
+        if post_id in used_ids or not (selftext or image_urls):
             f.rename(QUEUE_USED_DIR / f.name)
             continue
+
+        # Image posts (screenshots of texts/notes) carry their story in the
+        # picture; read it out before anything downstream needs the text.
+        if not selftext and image_urls:
+            from image_to_text import transcribe_images
+            print(f"  transcribing {len(image_urls)} image(s) from the post...")
+            selftext = _clean_selftext(transcribe_images(image_urls))
+            if not selftext:
+                print("  no readable text in the images; skipping this one")
+                f.rename(QUEUE_USED_DIR / f.name)
+                continue
 
         post = {
             "id": post_id,

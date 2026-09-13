@@ -22,8 +22,10 @@ async function saveToQueue(tab) {
 
   const result = injection && injection.result;
   if (!result || !result.ok) {
-    console.warn("Reddit Story Queue: extraction failed", result && result.error);
+    const reason = (result && result.error) || "Extraction failed for an unknown reason.";
+    console.warn("Reddit Story Queue:", reason);
     await flash(tab.id, "ERR", "#c0392b");
+    await toast(tab.id, reason, false);
     return;
   }
 
@@ -44,10 +46,41 @@ async function saveToQueue(tab) {
       saveAs: false,
       conflictAction: "uniquify",
     });
-    await flash(tab.id, result.lowConfidence ? "OK?" : "OK", "#2e7d32");
+    await flash(tab.id, "OK", "#2e7d32");
+    const detail = post.selftext
+      ? `${post.selftext.split(/\s+/).length} words`
+      : `${(post.image_urls || []).length} image(s) -- will be transcribed`;
+    await toast(tab.id, `Queued: "${post.title.slice(0, 60)}" (${detail})`, true);
   } catch (e) {
     console.warn("Reddit Story Queue: download failed", e);
     await flash(tab.id, "ERR", "#c0392b");
+    await toast(tab.id, `Couldn't save the queue file: ${e}`, false);
+  }
+}
+
+/** Surface the outcome in the page itself -- a red badge alone doesn't say why. */
+async function toast(tabId, message, ok) {
+  if (!tabId) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (msg, good) => {
+        const el = document.createElement("div");
+        el.textContent = msg;
+        Object.assign(el.style, {
+          position: "fixed", top: "16px", right: "16px", zIndex: "2147483647",
+          maxWidth: "380px", padding: "12px 16px", borderRadius: "10px",
+          font: "14px/1.4 system-ui, sans-serif", color: "#fff",
+          background: good ? "#2e7d32" : "#c0392b",
+          boxShadow: "0 4px 16px rgba(0,0,0,.35)", whiteSpace: "pre-wrap",
+        });
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), good ? 4000 : 9000);
+      },
+      args: [message, ok],
+    });
+  } catch (e) {
+    console.warn("Reddit Story Queue: could not show toast", e);
   }
 }
 
@@ -115,23 +148,38 @@ function extractPost() {
       };
     }
 
-    // Strategy 3: last-resort generic fallback -- grabs the main content
-    // area's text. Flagged low-confidence since it may include noise.
-    const ogTitleEl = document.querySelector('meta[property="og:title"]');
-    const ogTitle = ogTitleEl ? ogTitleEl.content : document.title;
-    const main = document.querySelector("main");
-    const fallbackText = main ? cleanText(main.innerText).slice(0, 4000) : "";
-    if (fallbackText) {
+    // No body text: this may still be an image post (screenshots of texts,
+    // notes, chat logs), which the pipeline can transcribe. Collect the post
+    // images so it can read them. Deliberately NOT scraping <main> as a
+    // fallback -- that pulls in nav chrome and the whole comments section,
+    // which would then get narrated as if it were the story.
+    const host = document.querySelector("shreddit-post") || document.querySelector("article") || document;
+    const imgs = Array.from(host.querySelectorAll("img"))
+      .filter((im) => /(^|\/\/)(i|preview|external-preview)\.redd\.it\//.test(im.src || ""))
+      .filter((im) => (im.naturalWidth || im.width || 0) >= 200)
+      .map((im) => im.src);
+    const imageUrls = Array.from(new Set(imgs)).slice(0, 6);
+
+    if (imageUrls.length) {
       const id = matchOrEmpty(/\/comments\/([a-z0-9]+)/i, location.pathname) || String(Date.now());
       const subreddit = matchOrEmpty(/\/r\/([^/]+)/, location.pathname);
+      const ogTitleEl = document.querySelector('meta[property="og:title"]');
+      const title = cleanText(
+        (shPost && shPost.getAttribute("post-title")) || (ogTitleEl ? ogTitleEl.content : document.title)
+      );
       return {
         ok: true,
-        lowConfidence: true,
-        data: { id, subreddit, title: cleanText(ogTitle), selftext: fallbackText, score: null, permalink: location.href },
+        kind: "image",
+        data: { id, subreddit, title, selftext: "", image_urls: imageUrls, score: null, permalink: location.href },
       };
     }
 
-    return { ok: false, error: "Could not find a post title/body on this page. Make sure you're on a text-post page." };
+    return {
+      ok: false,
+      error:
+        "No post body or images found. This looks like a link post or a feed page rather than a " +
+        "single post -- there's nothing to narrate. Open a text post or an image post and try again.",
+    };
   } catch (e) {
     return { ok: false, error: String(e) };
   }

@@ -85,6 +85,10 @@ GAMEPLAY_DIR = MEDIA_ROOT / "gameplay"
 BROLL_DIR = MEDIA_ROOT / "broll"
 MUSIC_DIR = ASSETS_DIR / "music"
 
+# How often the broll/ library wins over gameplay/ when both have clips.
+# 0.0 = always gameplay, 1.0 = always broll.
+BROLL_MIX = float(_require("BROLL_MIX", "0.5"))
+
 for d in (ASSETS_DIR, OUTPUT_DIR, READY_DIR, LOGS_DIR, MODELS_DIR, MUSIC_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
