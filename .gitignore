@@ -19,6 +19,10 @@ assets/music/*
 # the record of what every published video is obliged to attribute.
 !assets/music/credits.json
 !assets/music/ATTRIBUTION.txt
+!assets/sfx/
+assets/sfx/*
+!assets/sfx/credits.json
+!assets/sfx/ATTRIBUTION.txt
 Claude outputs/
 
 # Python

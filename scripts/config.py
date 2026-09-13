@@ -43,6 +43,16 @@ LLM_EXTRA_BODY = json.loads(_extra_body_raw) if _extra_body_raw else None
 
 KOKORO_VOICE = _require("KOKORO_VOICE", "af_heart")
 
+# Only used when TTS_BACKEND=elevenlabs (see tts_elevenlabs.py). Paid per
+# character -- having a key set here does not switch the active backend.
+ELEVENLABS_API_KEY = _require("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = _require("ELEVENLABS_VOICE_ID")
+
+# Only used when TTS_BACKEND=pollinations (see tts_pollinations.py). Free
+# tier per the model catalog, unlike the ElevenLabs voices Pollinations also
+# offers -- having a key set here does not switch the active backend.
+POLLINATIONS_API_KEY = _require("POLLINATIONS_API_KEY")
+
 # Which TTS backend narrates the video: "kokoro" (local ONNX) or "edge"
 # (Microsoft neural voices -- more natural). See tts.py.
 TTS_BACKEND = _require("TTS_BACKEND", "kokoro")
@@ -54,6 +64,13 @@ EDGE_RATE = _require("EDGE_RATE", "+0%")
 # truth -- YouTube Shorts/Reels cap at 180s, TikTok allows far longer.
 VIDEO_MIN_SEC = float(_require("VIDEO_MIN_SEC", "15"))
 VIDEO_MAX_SEC = float(_require("VIDEO_MAX_SEC", "180"))
+
+# Long-form cap for content posted outside the Shorts/Reels slot (e.g. the
+# Halloween nosleep-style track) -- run_pipeline.py's --length long uses this
+# instead of VIDEO_MAX_SEC. A story that still overruns this gets split into
+# multiple "Part N" videos (--split) rather than condensed, since condensing
+# a long story down to a Short defeats the point of sourcing a long one.
+VIDEO_MAX_SEC_LONG = float(_require("VIDEO_MAX_SEC_LONG", "600"))
 # Rate used to budget the FIRST narration draft only. Scaled from the
 # previous measurements (2.27-2.90 w/s at EDGE_RATE=-5%) by the actual
 # measured speedup from moving EDGE_RATE to +50% (1.494x, timed directly --
@@ -66,9 +83,10 @@ VIDEO_MAX_SEC = float(_require("VIDEO_MAX_SEC", "180"))
 NARRATION_WORDS_PER_SEC = float(_require("NARRATION_WORDS_PER_SEC", "3.60"))
 
 
-def narration_word_budget(safety: float = 0.88) -> int:
-    """Max narration words that should fit under VIDEO_MAX_SEC, with margin."""
-    return int(VIDEO_MAX_SEC * NARRATION_WORDS_PER_SEC * safety)
+def narration_word_budget(safety: float = 0.88, max_sec: float = None) -> int:
+    """Max narration words that should fit under the given cap (default
+    VIDEO_MAX_SEC), with margin."""
+    return int((max_sec if max_sec is not None else VIDEO_MAX_SEC) * NARRATION_WORDS_PER_SEC * safety)
 
 REDDIT_CLIENT_ID = _require("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = _require("REDDIT_CLIENT_SECRET")

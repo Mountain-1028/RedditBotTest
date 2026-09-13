@@ -17,8 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import config
-from reddit_source import pick_post
-from reddit_narration import generate_narration, condense_narration, grammar_check
+from reddit_source import pick_post, HORROR_SUBREDDITS
+from reddit_narration import generate_narration, condense_narration, grammar_check, split_narration_into_parts
+from fiction_story import generate_fiction
 from tts import synthesize
 from gameplay_footage import pick_gameplay_clip
 from reddit_card import generate_card_frames
@@ -26,9 +27,10 @@ from assembly import render_beat, mix_music, probe_duration
 from mood import classify
 from music import pick_track, volume_for, credit_for
 from qa import run_qa
+from sfx import detect_cues
 
 
-def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2) -> dict:
+def _fit_narration(script: dict, work_dir: Path, run_id: str, max_sec: float = None, attempts: int = 2) -> dict:
     """Synthesize the narration and, if it overruns VIDEO_MAX_SEC, condense and
     re-synthesize until it fits.
 
@@ -39,7 +41,7 @@ def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2)
     only the synthesized audio settles it -- and checking here, before the
     encode, is what stops an over-length script being discovered by QA after a
     full render has already been paid for."""
-    cap = config.VIDEO_MAX_SEC
+    cap = max_sec if max_sec is not None else config.VIDEO_MAX_SEC
     info = synthesize(script["narration"], str(work_dir / "narration.mp3"))
     fits = False
 
@@ -88,10 +90,20 @@ def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2)
     return info
 
 
-def produce_video(post: dict, script: dict, run_id: str = None, audio_override: Path = None) -> dict:
+def produce_video(post: dict, script: dict, run_id: str = None, audio_override: Path = None,
+                   max_sec: float = None, apply_sfx: bool = False) -> dict:
     """Everything after the narration text exists: footage, card, render, music,
     QA, and the drop into ready_to_post. audio_override uses a ready-made
-    narration track instead of synthesizing one (see import_narration_audio.py)."""
+    narration track instead of synthesizing one (see import_narration_audio.py).
+    max_sec overrides config.VIDEO_MAX_SEC (used for the long-form/Halloween
+    track and by run_series() when rendering an already-split part).
+
+    apply_sfx layers onomatopoeia sound effects (see sfx.py) into the mix at
+    their exact spoken timestamp. Only ever set True for AI-authored fiction
+    (source="fiction") -- a real pulled Reddit post is someone else's actual
+    account of something that happened to them, and sweetening it with sound
+    effects isn't this pipeline's call to make. Silently a no-op if there's
+    no audio_override-free tts_info to find word timings in."""
     run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     work_dir = config.OUTPUT_DIR / f"work_{run_id}"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -108,7 +120,7 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
         # discovering it at QA costs the whole encode.
         tts_info = None
         if not audio_override:
-            tts_info = _fit_narration(script, work_dir, run_id)
+            tts_info = _fit_narration(script, work_dir, run_id, max_sec=max_sec)
             log["grammar_check"] = tts_info.get("grammar")
             (work_dir / "script.json").write_text(json.dumps(script, indent=2))
 
@@ -125,6 +137,14 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
               f"-> {track['path'].name}{note}")
         if story_mood.get("why"):
             print(f"[{run_id}]   {story_mood['why']}")
+
+        sfx_cues = []
+        if apply_sfx and tts_info and tts_info.get("words"):
+            sfx_cues = detect_cues(tts_info["words"])
+            if sfx_cues:
+                print(f"[{run_id}] SFX: {len(sfx_cues)} cue(s) -- "
+                      + ", ".join(f"{c['category']}@{c['start']:.1f}s" for c in sfx_cues))
+        log["sfx_cues"] = [{"category": c["category"], "word": c["word"], "start": c["start"]} for c in sfx_cues]
 
         gameplay_clip, gameplay_start = pick_gameplay_clip()
 
@@ -143,7 +163,7 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
 
         final_path = work_dir / "final.mp4"
         mix_music(beat_video_path, track["path"], final_path,
-                  music_volume=volume_for(story_mood["mood"]))
+                  music_volume=volume_for(story_mood["mood"]), sfx_cues=sfx_cues)
         print(f"[{run_id}] Assembled: {final_path} ({probe_duration(final_path):.1f}s)")
 
         qa_result = run_qa(script, final_path)
@@ -187,17 +207,82 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
     return log
 
 
-def run_once() -> dict:
-    """Fully automatic: pick a post, generate narration, synthesize with Kokoro."""
-    post = pick_post()
+def _get_post_and_script(source: str, max_sec: float) -> tuple[dict, dict]:
+    if source == "fiction":
+        return generate_fiction(max_sec=max_sec)
+    subs = HORROR_SUBREDDITS if source == "horror" else None
+    # The manual queue is for posts the user hand-picked for the default
+    # track -- a --source horror run shouldn't silently consume it.
+    post = pick_post(subreddits=subs, check_queue=(source == "reddit"))
     print(f"r/{post['subreddit']}: {post['title']}")
-    script = generate_narration(post)
-    return produce_video(post, script)
+    script = generate_narration(post, max_sec=max_sec)
+    return post, script
+
+
+def run_series(source: str = "reddit", length: str = "short", split: bool = False) -> list[dict]:
+    """One story -> one or more rendered videos.
+
+    length="long" raises the cap to config.VIDEO_MAX_SEC_LONG. If the story
+    still doesn't fit that cap: split=True breaks it into a "Part N/M" series
+    (each part its own produce_video() call, same cap, sharing a run_id
+    prefix) instead of condensing, since condensing a long story down to fit
+    defeats the reason to have picked a long one. split=False falls back to
+    the normal condense-to-fit behavior in _fit_narration.
+    """
+    max_sec = config.VIDEO_MAX_SEC_LONG if length == "long" else config.VIDEO_MAX_SEC
+    # generate_narration/generate_fiction condense/cap to whatever budget
+    # they're given -- if split is on, generate against a generous ceiling
+    # instead of max_sec, so a naturally long story survives intact for the
+    # split below to divide. Without this, generation would condense the
+    # story down to one part's worth of words before split ever saw it.
+    gen_max_sec = max(max_sec * 6, 3600) if split else max_sec
+    post, script = _get_post_and_script(source, gen_max_sec)
+    # SFX only ever touch stories this pipeline itself authored -- see
+    # produce_video's apply_sfx docstring.
+    apply_sfx = (source == "fiction")
+
+    if not split:
+        return [produce_video(post, script, max_sec=max_sec, apply_sfx=apply_sfx)]
+
+    budget = config.narration_word_budget(max_sec=max_sec)
+    if len(script["narration"].split()) <= budget:
+        return [produce_video(post, script, max_sec=max_sec, apply_sfx=apply_sfx)]
+
+    parts = split_narration_into_parts(script["narration"], budget)
+    print(f"Story runs {len(script['narration'].split())} words, over the {budget}-word "
+          f"({max_sec:.0f}s) cap -- splitting into {len(parts)} parts")
+
+    base_run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    results = []
+    for i, part_text in enumerate(parts, 1):
+        part_script = {
+            **script,
+            "narration": part_text,
+            "hook": f"{script['hook']} (Part {i}/{len(parts)})",
+            "caption": f"{script['caption']} (Part {i} of {len(parts)}{' -- follow for the rest' if i < len(parts) else ''})",
+        }
+        results.append(produce_video(post, part_script, run_id=f"{base_run_id}_part{i}",
+                                      max_sec=max_sec, apply_sfx=apply_sfx))
+    return results
+
+
+def run_once() -> dict:
+    """Fully automatic: pick a post, generate narration, synthesize with Kokoro.
+    Kept for backward compatibility -- equivalent to run_series()[0]."""
+    return run_series()[0]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch", type=int, default=1)
+    parser.add_argument("--source", choices=["reddit", "horror", "fiction"], default="reddit",
+                         help="reddit = default subreddit pool; horror = real nosleep-style "
+                              "subreddits (Halloween); fiction = AI-original horror story")
+    parser.add_argument("--length", choices=["short", "long"], default="short",
+                         help="short = VIDEO_MAX_SEC (Shorts/Reels); long = VIDEO_MAX_SEC_LONG")
+    parser.add_argument("--split", action="store_true",
+                         help="if the story overruns the length cap, split into a Part N/M "
+                              "series instead of condensing it down to fit")
     args = parser.parse_args()
 
     missing = config.missing_keys()
@@ -206,4 +291,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     for _ in range(args.batch):
-        run_once()
+        run_series(source=args.source, length=args.length, split=args.split)

@@ -167,18 +167,70 @@ def condense_narration(narration: str, target_words: int, attempts: int = 3) -> 
     return narration
 
 
+def split_narration_into_parts(narration: str, max_words_per_part: int) -> list[str]:
+    """Split a long narration into consecutive parts that each fit
+    max_words_per_part, breaking at paragraph boundaries (falling back to
+    sentence boundaries for a single oversized paragraph) so no sentence is
+    ever cut mid-thought. Used for --split long-form stories into a "Part
+    1/2/3" series instead of condensing them down to fit one slot, which
+    would defeat the point of picking a long story in the first place.
+
+    Deliberately not an LLM call: the exact wording has to match what
+    _fit_narration synthesizes and what captions are built from, so this only
+    ever removes/moves whitespace-delimited text, never rewrites it."""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", narration.strip()) if p.strip()]
+    if not paragraphs:
+        return [narration.strip()] if narration.strip() else []
+
+    chunks = []
+    for para in paragraphs:
+        if len(para.split()) <= max_words_per_part:
+            chunks.append(para)
+            continue
+        # A single paragraph longer than one whole part -- break it at
+        # sentence boundaries instead of dropping it in one oversized chunk.
+        sentences = re.split(r"(?<=[.!?])\s+", para)
+        buf = []
+        for sent in sentences:
+            if buf and len(" ".join(buf + [sent]).split()) > max_words_per_part:
+                chunks.append(" ".join(buf))
+                buf = [sent]
+            else:
+                buf.append(sent)
+        if buf:
+            chunks.append(" ".join(buf))
+
+    parts, current = [], []
+    current_words = 0
+    for chunk in chunks:
+        words = len(chunk.split())
+        if current and current_words + words > max_words_per_part:
+            parts.append("\n\n".join(current))
+            current, current_words = [], 0
+        current.append(chunk)
+        current_words += words
+    if current:
+        parts.append("\n\n".join(current))
+    return parts
+
+
 def _extract_json(text: str) -> dict:
     text = text.strip()
     text = re.sub(r"^```(json)?|```$", "", text, flags=re.MULTILINE).strip()
     return json.loads(text)
 
 
-def generate_narration(post: dict, attempts: int = 4) -> dict:
+def generate_narration(post: dict, attempts: int = 4, max_sec: float = None) -> dict:
     """Attempts are spaced (2s, 8s, 32s). The gateway returns a 503 "model is
     overloaded" page often enough that three back-to-back retries all land in
-    the same outage window and the post gets burned for nothing."""
+    the same outage window and the post gets burned for nothing.
+
+    max_sec overrides the default (short-form) word budget -- pass
+    config.VIDEO_MAX_SEC_LONG for the long-form/Halloween track, otherwise a
+    long real post gets condensed down to Shorts length here, before
+    run_pipeline's long-form/--split handling ever sees the full story."""
     last_error = None
-    max_words = config.narration_word_budget()
+    max_words = config.narration_word_budget(max_sec=max_sec)
     for attempt in range(attempts):
         if attempt:
             time.sleep(2 * (4 ** (attempt - 1)))

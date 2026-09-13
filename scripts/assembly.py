@@ -220,13 +220,37 @@ def render_beat(
     return out_path
 
 
-def mix_music(video_in: Path, music_path: Path, out_path: Path, music_volume: float = 0.12):
+def mix_music(video_in: Path, music_path: Path, out_path: Path, music_volume: float = 0.12,
+               sfx_cues: list = None, sfx_volume: float = 0.55):
+    """sfx_cues (only ever passed for AI-authored fiction -- never for a real
+    pulled post, see sfx.py/run_pipeline.py) is a list of {"clip", "start"}:
+    each clip is delayed to its cue's timestamp with adelay and mixed in
+    alongside the narration and music. normalize=0 on amix is required --
+    amix's default behaviour quietens every existing input as more inputs are
+    added, which would make the narration progressively fainter as a story
+    picks up more cues; each stream's level is set explicitly instead."""
+    sfx_cues = sfx_cues or []
+    inputs = ["-i", str(video_in), "-stream_loop", "-1", "-i", str(music_path)]
+    for cue in sfx_cues:
+        inputs += ["-i", str(cue["clip"])]
+
+    parts = [f"[1:a]volume={music_volume}[m]"]
+    mix_labels = ["0:a", "m"]
+    for i, cue in enumerate(sfx_cues):
+        delay_ms = max(int(cue["start"] * 1000), 0)
+        label = f"s{i}"
+        parts.append(f"[{i + 2}:a]adelay={delay_ms}:all=1,volume={sfx_volume}[{label}]")
+        mix_labels.append(label)
+
+    parts.append(
+        "".join(f"[{lbl}]" for lbl in mix_labels)
+        + f"amix=inputs={len(mix_labels)}:duration=first:dropout_transition=0:normalize=0[a]"
+    )
+    filter_complex = ";".join(parts)
+
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_in),
-        "-stream_loop", "-1", "-i", str(music_path),
-        "-filter_complex",
-        f"[1:a]volume={music_volume}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
+        "ffmpeg", "-y", *inputs,
+        "-filter_complex", filter_complex,
         "-map", "0:v", "-map", "[a]",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
         "-shortest",
