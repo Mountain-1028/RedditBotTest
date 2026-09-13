@@ -48,6 +48,11 @@ KOKORO_VOICE = _require("KOKORO_VOICE", "af_heart")
 ELEVENLABS_API_KEY = _require("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = _require("ELEVENLABS_VOICE_ID")
 
+# Only used when TTS_BACKEND=pollinations (see tts_pollinations.py). Free
+# tier per the model catalog, unlike the ElevenLabs voices Pollinations also
+# offers -- having a key set here does not switch the active backend.
+POLLINATIONS_API_KEY = _require("POLLINATIONS_API_KEY")
+
 # Which TTS backend narrates the video: "kokoro" (local ONNX) or "edge"
 # (Microsoft neural voices -- more natural). See tts.py.
 TTS_BACKEND = _require("TTS_BACKEND", "kokoro")
