@@ -31,9 +31,18 @@ run_pipeline.py copies the relevant line into each video's ready_to_post/*.txt.
   ov_409e84cd.mp3
     "Behind the mind" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/1847309
+  ov_54a95efe.mp3
+    "Creeping Malaise" by Temperament is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1324929
+  ov_64ae6d48.mp3
+    "IN" by Paris Solemn is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1438901
   ov_6f65e2ab.mp3
     "Suspense and Tension-stem-5-1min" by 3minutetunes is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/1172853
+  ov_8743815e.mp3
+    "That's not Psy Ambient!" by Voytek Pavlik is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1024467
   ov_8b632c58.mp3
     "7" by Ivan Tregub (BER) is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/1503874
@@ -46,6 +55,9 @@ run_pipeline.py copies the relevant line into each video's ready_to_post/*.txt.
   ov_a0729af4.mp3
     "Disabled emotions suite - Part 4" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/202934
+  ov_a19080ea.mp3
+    "Z Asmut- Specus" by Z Asmut is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1192225
   ov_a3c3886d.mp3
     "Suspense and Tension-stem-7-1min" by 3minutetunes is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/1172855
@@ -81,9 +93,21 @@ run_pipeline.py copies the relevant line into each video's ready_to_post/*.txt.
   ov_82405fcc.mp3
     "Ephemeral living" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/373300
+  ov_97030625.mp3
+    "Ships" by Josh Woodward is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/162035
+  ov_a7013b32.mp3
+    "Godfather's Theme" by Spin Day is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1182881
   ov_b6af2fd0.mp3
     "Killing earth" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/373259
+  ov_ba977f2e.mp3
+    "Let It In (Instrumental Version)" by Josh Woodward (Instrumental Versions) is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/764961
+  ov_d8466580.mp3
+    "Waterfall" by Dan Falvey is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/575457
   ov_dee9e418.mp3
     "Blind girl (feat. Dia Yiannopoulou)" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
     source: https://www.jamendo.com/track/1870772

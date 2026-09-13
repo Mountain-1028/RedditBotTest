@@ -2,11 +2,13 @@
 """
 Picks the TTS backend based on TTS_BACKEND in .env:
 
-    kokoro  -- local ONNX model, no network, flatter delivery (default)
-    edge    -- Microsoft neural voices via edge-tts, more natural
+    kokoro      -- local ONNX model, no network, flatter delivery (default)
+    edge        -- Microsoft neural voices via edge-tts, more natural
+    elevenlabs  -- paid per character; see tts_elevenlabs.py for why it's not
+                   the default despite being what most competing channels use
 
-Both backends return the same dict shape, so callers don't care which ran:
-    {"path", "duration_sec", "sample_rate", "voice"}
+All backends return the same dict shape, so callers don't care which ran:
+    {"path", "duration_sec", "sample_rate", "voice", "words"}
 """
 import config
 
@@ -16,12 +18,15 @@ def synthesize(text: str, out_path: str) -> dict:
     if backend == "edge":
         from tts_edge import synthesize as _edge
         return _edge(text, out_path)
+    if backend == "elevenlabs":
+        from tts_elevenlabs import synthesize as _elevenlabs
+        return _elevenlabs(text, out_path)
     if backend == "kokoro":
         from tts_kokoro import synthesize as _kokoro
         result = _kokoro(text, out_path)
         result.setdefault("path", out_path)
         return result
-    raise ValueError(f"Unknown TTS_BACKEND {backend!r} -- expected 'kokoro' or 'edge'")
+    raise ValueError(f"Unknown TTS_BACKEND {backend!r} -- expected 'kokoro', 'edge', or 'elevenlabs'")
 
 
 if __name__ == "__main__":

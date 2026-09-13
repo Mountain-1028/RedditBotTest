@@ -42,6 +42,15 @@ SUBREDDITS = [
     "pettyrevenge", "EntitledPeople",
 ]
 
+# Real, permalink-attributed horror/creepypasta posts -- the Halloween track's
+# default source. These are genuine user-submitted posts (same validation and
+# used-post history as SUBREDDITS), just from subs where the genre is horror
+# rather than drama/confession.
+HORROR_SUBREDDITS = [
+    "nosleep", "LetsNotMeet", "shortscarystories", "Thetruthishorrifying",
+    "libraryofshadows", "DarkTales", "creepyencounters",
+]
+
 MIN_SCORE = 50
 
 USER_AGENT = "python:faceless-reddit-story-pipeline:v1.0 (by /u/faceless_pipeline_bot)"
@@ -249,14 +258,19 @@ def pick_queued_post() -> dict | None:
     return None
 
 
-def pick_post() -> dict:
-    queued = pick_queued_post()
-    if queued:
-        return queued
+def pick_post(subreddits: list[str] = None, check_queue: bool = True) -> dict:
+    """subreddits defaults to SUBREDDITS; pass HORROR_SUBREDDITS for the
+    Halloween track. check_queue=False skips the manual queue (used when a
+    caller wants a post from a specific pool -- the queue's contents were
+    hand-picked by the user for the default track, not this one)."""
+    if check_queue:
+        queued = pick_queued_post()
+        if queued:
+            return queued
 
     history = load_history()
     used_ids = {h["id"] for h in history}
-    subs = SUBREDDITS[:]
+    subs = (subreddits or SUBREDDITS)[:]
     random.shuffle(subs)
 
     for sub in subs:
@@ -294,7 +308,7 @@ def pick_post() -> dict:
             return post
 
     raise RuntimeError(
-        f"No suitable unused Reddit post found today across {SUBREDDITS} "
+        f"No suitable unused Reddit post found today across {subs} "
         f"(need {MIN_STORY_CHARS}+ chars of real story, score >= {MIN_SCORE}, not NSFW/stickied/already-used)."
     )
 
