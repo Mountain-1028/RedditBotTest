@@ -20,6 +20,10 @@ narrated video. Below is the original post. Your job:
    fix broken sentences, remove leftover reddit formatting/links, but DO NOT
    invent new plot details, change the story, or add commentary. Preserve the
    original narrator's voice and meaning.
+   HARD LIMIT: the narration must be at most {max_words} words. If the post is
+   longer than that, condense it -- cut asides, repetition, and background
+   detail, keeping the setup, the turn, and the payoff intact. Condensing means
+   removing the author's less important words, never inventing replacements.
 2. Write a short, punchy on-screen title/hook (under 12 words) to open the video.
 3. Write a 1-2 sentence social caption for the post itself.
 4. Write 5-8 relevant hashtags.
@@ -47,12 +51,14 @@ def _extract_json(text: str) -> dict:
 
 def generate_narration(post: dict, attempts: int = 3) -> dict:
     last_error = None
+    max_words = config.narration_word_budget()
     for _ in range(attempts):
         raw = call_llm(
             model=config.LLM_MODEL_SCRIPT,
             system="You are a careful editor preparing real user-submitted stories for narration. You always return strict JSON.",
             user=NARRATION_PROMPT.format(
-                subreddit=post["subreddit"], title=post["title"], selftext=post["selftext"]
+                subreddit=post["subreddit"], title=post["title"], selftext=post["selftext"],
+                max_words=max_words,
             ),
             max_tokens=4000,
             temperature=0.4,
@@ -63,12 +69,17 @@ def generate_narration(post: dict, attempts: int = 3) -> dict:
         except json.JSONDecodeError as e:
             last_error = e
             continue
+
+        word_count = len(data.get("narration", "").split())
+        if word_count > max_words * 1.15:
+            last_error = ValueError(f"narration was {word_count} words, budget is {max_words}")
+            continue
         data["subreddit"] = post["subreddit"]
         data["post_id"] = post["id"]
         data["permalink"] = post["permalink"]
         data["original_title"] = post["title"]
         return data
-    raise RuntimeError(f"Model returned malformed/truncated JSON after {attempts} attempts: {last_error}")
+    raise RuntimeError(f"Narration generation failed after {attempts} attempts: {last_error}")
 
 
 if __name__ == "__main__":

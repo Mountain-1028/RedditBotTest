@@ -4,3 +4,5 @@ numpy
 openai
 python-dotenv
 requests
+edge-tts
+pillow

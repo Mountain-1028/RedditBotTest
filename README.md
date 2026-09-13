@@ -20,7 +20,9 @@ This was pivoted from an earlier recipe-video version of the same pipeline -- th
    - `LLM_MODEL_SCRIPT` -- a fast/cheap model name from your gateway (used once per video, for narration cleanup)
    - `LLM_MODEL_QA` -- used once per video, for the content-safety/coherence check
    - `LLM_EXTRA_BODY` -- optional JSON of gateway-specific extra params (e.g. disabling a model's default "thinking" mode, which otherwise eats the completion-token budget before producing visible output)
-5. Drop a handful of **gameplay clips** (mp4/mov/mkv -- e.g. Subway Surfers / Minecraft parkour recordings you have the rights to use) into `assets/gameplay/`. Not fetched automatically: this is footage you record or license yourself, same reasoning as the music below.
+   - `TTS_BACKEND` -- `edge` (Microsoft neural voices, more natural) or `kokoro` (local, no network)
+   - `MEDIA_ROOT` -- where bulk footage lives; leave blank to keep it in-project under `assets/`
+5. Drop a handful of **gameplay clips** (mp4/mov/mkv/webm -- e.g. Subway Surfers / Minecraft parkour recordings you have the rights to use) into `<MEDIA_ROOT>/gameplay/`. Not fetched automatically: this is footage you record or license yourself, same reasoning as the music below. Long recordings are fine -- the pipeline seeks to a random start point each run rather than always playing from the top, so one 10-hour file gives plenty of variety without being split up.
 6. Drop a handful of royalty-free background music tracks (mp3/wav/aac) into `assets/music/` -- the pipeline picks one at random per video. Make sure you have rights to use whatever you put there (YouTube Audio Library, Pixabay Music, etc. are safe free sources).
 
 Reddit posts are fetched from the public, unauthenticated `old.reddit.com/*.json` endpoints -- no API key needed (`www.reddit.com`'s equivalent endpoint returned a Cloudflare 403 in testing; `old.reddit.com` didn't). Reddit can rate-limit or change this at its discretion; if fetching starts failing consistently, register a real app at reddit.com/prefs/apps and switch `reddit_source.py` to OAuth.
@@ -44,13 +46,31 @@ Each run writes a log to `logs/run_<id>.json`. Anything that passes QA lands in 
 
 ```
 scripts/           all pipeline code
+browser-extension/ click-to-queue Chrome/Brave extension (see its own README)
 models/            Kokoro model files
-assets/gameplay/   your background gameplay clips (add these yourself)
 assets/music/      your background tracks (add these yourself)
 assets/            scratch space for intermediate audio/video during a run
+<MEDIA_ROOT>/gameplay/  background gameplay footage (add these yourself)
+<MEDIA_ROOT>/broll/     other background footage
 output/ready_to_post/   finished videos + caption text, ready to upload
+output/tts_export_*/    manual-TTS chunks awaiting exported audio
 logs/              per-run logs + the used-posts history
 ```
+
+## Manual TTS workflow (optional)
+
+To narrate with an external tool (e.g. an app's built-in text-to-speech) instead
+of the automatic backends:
+
+```
+python3 scripts/export_narration_text.py          # writes numbered text chunks
+# ...paste each chunk into your TTS tool, save the audio as 01.*, 02.* into the
+#    export folder's audio/ subfolder...
+python3 scripts/import_narration_audio.py tts_export_<id>
+```
+
+The import step stitches the chunks into one narration track and runs the rest
+of the pipeline unchanged.
 
 ## Thumbnail generation
 

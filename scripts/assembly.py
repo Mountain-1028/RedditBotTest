@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 import config
-from tts_kokoro import synthesize
+from tts import synthesize
 from captions import estimate_word_timestamps
 
 W, H = 1080, 1920
@@ -64,36 +64,85 @@ def _escape_ffmpeg_filter_path(path: Path) -> str:
     return f"'{escaped}'"
 
 
-def render_beat(beat: dict, visual_path: Path, work_dir: Path, index: int) -> Path:
+def render_beat(
+    beat: dict, visual_path: Path, work_dir: Path, index: int, card_path: Path = None,
+    visual_start: float = 0.0, audio_override: Path = None,
+) -> Path:
+    """Renders the narration over looped gameplay footage with burned captions.
+
+    If card_path is given, the frame is split: the card image fills the top
+    quarter (1080x480) and the gameplay footage is cropped to fill the
+    remaining bottom three-quarters (1080x1440), stacked into the full
+    1080x1920 frame. Without it, gameplay footage fills the whole frame.
+
+    visual_start seeks into visual_path before looping -- lets a single long
+    source clip (e.g. a 10-minute gameplay recording) start from a different
+    point each render instead of always playing from frame 0.
+
+    audio_override supplies a ready-made narration track (e.g. exported from
+    an external TTS tool) instead of synthesizing one with Kokoro."""
     work_dir.mkdir(parents=True, exist_ok=True)
     audio_path = work_dir / f"beat_{index:02d}.wav"
     ass_path = work_dir / f"beat_{index:02d}.ass"
     out_path = work_dir / f"beat_{index:02d}.mp4"
 
-    tts_info = synthesize(beat["voiceover"], str(audio_path))
-    duration = tts_info["duration_sec"]
+    if audio_override:
+        audio_path = Path(audio_override)
+        duration = probe_duration(audio_path)
+    else:
+        tts_info = synthesize(beat["voiceover"], str(audio_path))
+        # Backends pick their own container (Kokoro wav, Edge mp3).
+        audio_path = Path(tts_info["path"])
+        duration = tts_info["duration_sec"]
 
     words = estimate_word_timestamps(beat["voiceover"], duration)
     build_ass(words, ass_path)
+    ass_arg = _escape_ffmpeg_filter_path(ass_path)
 
-    vf = (
-        f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-        f"crop={W}:{H},setsar=1,"
-        f"ass={_escape_ffmpeg_filter_path(ass_path)}"
-    )
-
-    cmd = [
-        "ffmpeg", "-y",
+    visual_input_args = (["-ss", f"{visual_start:.3f}"] if visual_start else []) + [
         "-stream_loop", "-1", "-i", str(visual_path),
-        "-i", str(audio_path),
-        "-filter_complex", f"[0:v]{vf}[v]",
-        "-map", "[v]", "-map", "1:a",
-        "-t", f"{duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "160k",
-        "-pix_fmt", "yuv420p",
-        str(out_path),
     ]
+
+    if card_path:
+        card_h = H // 4
+        gp_h = H - card_h
+        filter_complex = (
+            f"[0:v]scale={W}:{gp_h}:force_original_aspect_ratio=increase,crop={W}:{gp_h},setsar=1[gp];"
+            f"[1:v]scale={W}:{card_h},setsar=1[card];"
+            f"[card][gp]vstack=inputs=2[stacked];"
+            f"[stacked]ass={ass_arg}[v]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            *visual_input_args,
+            "-loop", "1", "-i", str(card_path),
+            "-i", str(audio_path),
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "2:a",
+            "-t", f"{duration:.3f}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "160k",
+            "-pix_fmt", "yuv420p",
+            str(out_path),
+        ]
+    else:
+        vf = (
+            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},setsar=1,"
+            f"ass={ass_arg}"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            *visual_input_args,
+            "-i", str(audio_path),
+            "-filter_complex", f"[0:v]{vf}[v]",
+            "-map", "[v]", "-map", "1:a",
+            "-t", f"{duration:.3f}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "160k",
+            "-pix_fmt", "yuv420p",
+            str(out_path),
+        ]
     _run(cmd)
     return out_path
 

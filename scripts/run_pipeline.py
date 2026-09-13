@@ -21,6 +21,7 @@ import config
 from reddit_source import pick_post
 from reddit_narration import generate_narration
 from gameplay_footage import pick_gameplay_clip
+from reddit_card import generate_card_image
 from assembly import render_beat, mix_music, probe_duration
 from qa import run_qa
 
@@ -36,25 +37,35 @@ def pick_music_track() -> Path:
     return random.choice(tracks)
 
 
-def run_once() -> dict:
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+def produce_video(post: dict, script: dict, run_id: str = None, audio_override: Path = None) -> dict:
+    """Everything after the narration text exists: footage, card, render, music,
+    QA, and the drop into ready_to_post. audio_override uses a ready-made
+    narration track instead of synthesizing one (see import_narration_audio.py)."""
+    run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     work_dir = config.OUTPUT_DIR / f"work_{run_id}"
     work_dir.mkdir(parents=True, exist_ok=True)
     log = {"run_id": run_id, "started_at": datetime.now(timezone.utc).isoformat()}
+    log["reddit_post"] = {"id": post["id"], "subreddit": post["subreddit"], "title": post["title"]}
 
     try:
-        post = pick_post()
-        log["reddit_post"] = {"id": post["id"], "subreddit": post["subreddit"], "title": post["title"]}
-        print(f"[{run_id}] r/{post['subreddit']}: {post['title']}")
-
-        script = generate_narration(post)
         (work_dir / "script.json").write_text(json.dumps(script, indent=2))
-        print(f"[{run_id}] Narration ready: {script.get('hook')}")
+        words = len(script["narration"].split())
+        est_sec = words / config.NARRATION_WORDS_PER_SEC
+        print(f"[{run_id}] Narration ready: {script.get('hook')} ({words} words, ~{est_sec:.0f}s)")
+        if est_sec > config.VIDEO_MAX_SEC:
+            print(f"[{run_id}] WARNING: ~{est_sec:.0f}s exceeds VIDEO_MAX_SEC={config.VIDEO_MAX_SEC:.0f}s; "
+                  "this will fail QA on duration.")
 
-        gameplay_clip = pick_gameplay_clip()
+        gameplay_clip, gameplay_start = pick_gameplay_clip()
+
+        card_post = {"subreddit": post["subreddit"], "title": script.get("hook") or post["title"], "score": post.get("score")}
+        card_path = generate_card_image(card_post, work_dir / "card.png")
 
         beat = {"voiceover": script["narration"]}
-        beat_video_path = render_beat(beat, gameplay_clip, work_dir / "beats", 0)
+        beat_video_path = render_beat(
+            beat, gameplay_clip, work_dir / "beats", 0, card_path=card_path,
+            visual_start=gameplay_start, audio_override=audio_override,
+        )
         print(f"[{run_id}] Rendered")
 
         music_path = pick_music_track()
@@ -94,6 +105,14 @@ def run_once() -> dict:
     log_path = config.LOGS_DIR / f"run_{run_id}.json"
     log_path.write_text(json.dumps(log, indent=2))
     return log
+
+
+def run_once() -> dict:
+    """Fully automatic: pick a post, generate narration, synthesize with Kokoro."""
+    post = pick_post()
+    print(f"r/{post['subreddit']}: {post['title']}")
+    script = generate_narration(post)
+    return produce_video(post, script)
 
 
 if __name__ == "__main__":

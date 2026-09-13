@@ -26,8 +26,43 @@ publicly on social media (TikTok/YouTube Shorts). Check for:
 Narration:
 {narration}
 
-Respond with ONLY valid JSON: {{"pass": true/false, "issues": ["...", ...]}}
-"issues" should be empty if pass is true."""
+Respond in exactly this plain-text format, nothing else:
+
+VERDICT: PASS
+
+or, if there are problems:
+
+VERDICT: FAIL
+ISSUE: <one problem, on one line>
+ISSUE: <another problem, on one line>"""
+
+
+def _parse_verdict(raw: str) -> dict:
+    """Parse the plain-text verdict format. Deliberately not JSON: this
+    gateway reliably drops the first several characters of a response, which
+    leaves JSON unparseable but leaves line-based text readable (a mangled
+    "VERDICT: PASS" still arrives as "PASS"). Hence the bare-token fallback."""
+    verdict = None
+    issues = []
+    for line in raw.splitlines():
+        line = line.strip().lstrip("*-# ").strip().rstrip("*")
+        upper = line.upper()
+        if upper.startswith("VERDICT:"):
+            value = upper.split(":", 1)[1].strip()
+            if value.startswith("PASS"):
+                verdict = True
+            elif value.startswith("FAIL"):
+                verdict = False
+        elif upper.startswith("ISSUE:"):
+            issue = line.split(":", 1)[1].strip()
+            if issue:
+                issues.append(issue)
+        elif verdict is None and upper.strip(".!") in ("PASS", "FAIL"):
+            verdict = upper.strip(".!") == "PASS"
+
+    if verdict is None:
+        raise ValueError(f"no verdict found in response: {raw[:200]!r}")
+    return {"pass": verdict, "issues": issues}
 
 
 def llm_check_script(script: dict, attempts: int = 3) -> dict:
@@ -35,20 +70,21 @@ def llm_check_script(script: dict, attempts: int = 3) -> dict:
     for _ in range(attempts):
         raw = call_llm(
             model=config.LLM_MODEL_QA,
-            system="You are a meticulous content moderator preparing videos for public posting. You always return strict JSON.",
+            system="You are a meticulous content moderator preparing videos for public posting.",
             user=QA_PROMPT.format(narration=script["narration"]),
             max_tokens=1500,
             temperature=0.2,
-            json_mode=True,
         )
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
+            return _parse_verdict(raw)
+        except ValueError as e:
             last_error = e
-    raise RuntimeError(f"QA model returned malformed/truncated JSON after {attempts} attempts: {last_error}")
+    raise RuntimeError(f"QA model gave no parseable verdict after {attempts} attempts: {last_error}")
 
 
-def spec_check(video_path: Path, min_sec=15, max_sec=200) -> dict:
+def spec_check(video_path: Path, min_sec=None, max_sec=None) -> dict:
+    min_sec = config.VIDEO_MIN_SEC if min_sec is None else min_sec
+    max_sec = config.VIDEO_MAX_SEC if max_sec is None else max_sec
     issues = []
 
     probe = subprocess.run(
