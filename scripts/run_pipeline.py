@@ -10,7 +10,6 @@ Usage:
 """
 import argparse
 import json
-import random
 import shutil
 import sys
 import traceback
@@ -21,20 +20,11 @@ import config
 from reddit_source import pick_post
 from reddit_narration import generate_narration
 from gameplay_footage import pick_gameplay_clip
-from reddit_card import generate_card_image
+from reddit_card import generate_card_frames
 from assembly import render_beat, mix_music, probe_duration
+from mood import classify
+from music import pick_track, volume_for
 from qa import run_qa
-
-MUSIC_DIR = config.ASSETS_DIR / "music"
-
-
-def pick_music_track() -> Path:
-    tracks = list(MUSIC_DIR.glob("*.mp3")) + list(MUSIC_DIR.glob("*.aac")) + list(MUSIC_DIR.glob("*.wav"))
-    if not tracks:
-        raise RuntimeError(
-            f"No background music found in {MUSIC_DIR}. Drop a few royalty-free tracks there first."
-        )
-    return random.choice(tracks)
 
 
 def produce_video(post: dict, script: dict, run_id: str = None, audio_override: Path = None) -> dict:
@@ -56,21 +46,33 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
             print(f"[{run_id}] WARNING: ~{est_sec:.0f}s exceeds VIDEO_MAX_SEC={config.VIDEO_MAX_SEC:.0f}s; "
                   "this will fail QA on duration.")
 
+        # Decided before the render so the run log records the mood even if a
+        # later stage fails, and so a missing-music error surfaces in seconds
+        # rather than after a full encode.
+        story_mood = classify(script)
+        track = pick_track(story_mood["mood"])
+        log["mood"] = {**story_mood, "track": track["path"].name, "matched_folder": track["matched"]}
+        note = "" if track["matched"] else "  (fallback -- no tracks in that mood folder)"
+        print(f"[{run_id}] Mood: {story_mood['mood']} ({story_mood['source']}) "
+              f"-> {track['path'].name}{note}")
+        if story_mood.get("why"):
+            print(f"[{run_id}]   {story_mood['why']}")
+
         gameplay_clip, gameplay_start = pick_gameplay_clip()
 
-        card_post = {"subreddit": post["subreddit"], "title": script.get("hook") or post["title"], "score": post.get("score")}
-        card_path = generate_card_image(card_post, work_dir / "card.png")
+        card_post = {"title": script.get("hook") or post["title"]}
+        card_frames = generate_card_frames(card_post, work_dir / "card_frames")
 
         beat = {"voiceover": script["narration"]}
         beat_video_path = render_beat(
-            beat, gameplay_clip, work_dir / "beats", 0, card_path=card_path,
+            beat, gameplay_clip, work_dir / "beats", 0, card_frames=card_frames,
             visual_start=gameplay_start, audio_override=audio_override,
         )
         print(f"[{run_id}] Rendered")
 
-        music_path = pick_music_track()
         final_path = work_dir / "final.mp4"
-        mix_music(beat_video_path, music_path, final_path, music_volume=0.06)
+        mix_music(beat_video_path, track["path"], final_path,
+                  music_volume=volume_for(story_mood["mood"]))
         print(f"[{run_id}] Assembled: {final_path} ({probe_duration(final_path):.1f}s)")
 
         qa_result = run_qa(script, final_path)
@@ -86,6 +88,7 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
                 f"Hook: {script.get('hook')}\n\n"
                 f"Caption: {script.get('caption')}\n\n"
                 f"Hashtags: {' '.join(script.get('hashtags', []))}\n\n"
+                f"Mood: {story_mood['mood']} ({story_mood['source']}) - music: {track['path'].name}\n\n"
                 f"Source: {post.get('permalink')}\n"
             )
             log["status"] = "ready"

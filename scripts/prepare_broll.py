@@ -107,6 +107,26 @@ def mean_luma(clip: Path, tmp: Path) -> float:
     return value
 
 
+def border_intrusion(clip: Path, tmp: Path, threshold: float = 0.30) -> bool:
+    """True if the branded frame still shows at this clip's edges.
+
+    The content window is found once for the whole source, but compilations
+    splice clips of differing widths, so on some segments the border creeps
+    back in. Those are cheaper to discard than to crop for -- cropping every
+    clip to suit the worst one would zoom the majority needlessly."""
+    f = tmp / "border.png"
+    dur = probe_duration(clip)
+    if not grab_frame(clip, dur / 2, f, "scale=200:200"):
+        return False
+    arr = np.asarray(Image.open(f).convert("RGB"))
+    f.unlink(missing_ok=True)
+
+    edge = max(6, int(arr.shape[1] * 0.06))
+    r = arr[..., 0].astype(int); g = arr[..., 1].astype(int); b = arr[..., 2].astype(int)
+    saturated_yellow = (r > 170) & (g > 130) & (b < 130) & ((r - b) > 70)
+    return max(saturated_yellow[:, :edge].mean(), saturated_yellow[:, -edge:].mean()) > threshold
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("source", help="the long compilation to cut up")
@@ -138,13 +158,16 @@ def main():
         clips = segment(src, out_dir, crop, args.seconds, prefix)
         print(f"produced : {len(clips)} segments")
 
-        dropped = 0
+        dark = bordered = 0
         for clip in clips:
             if mean_luma(clip, tmp) < DARK_THRESHOLD:
                 clip.unlink()
-                dropped += 1
-        kept = len(clips) - dropped
-        print(f"dropped  : {dropped} dead/black segments")
+                dark += 1
+            elif border_intrusion(clip, tmp):
+                clip.unlink()
+                bordered += 1
+        kept = len(clips) - dark - bordered
+        print(f"dropped  : {dark} dead/black, {bordered} with the branded border still showing")
         print(f"kept     : {kept} usable clips in {out_dir}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

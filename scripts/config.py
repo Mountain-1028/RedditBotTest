@@ -67,6 +67,13 @@ def narration_word_budget(safety: float = 0.88) -> int:
 REDDIT_CLIENT_ID = _require("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = _require("REDDIT_CLIENT_SECRET")
 
+# Intro title card. The handle is the channel's own branding.
+CARD_HANDLE = _require("CARD_HANDLE", "@RedditStories")
+CARD_AVATAR = _require("CARD_AVATAR")          # path to an image; blank = flat placeholder
+CARD_THEME = _require("CARD_THEME", "light")   # light | dark
+CARD_EMOJI = _require("CARD_EMOJI", "")        # optional emoji row under the handle
+CARD_SECONDS = float(_require("CARD_SECONDS", "6"))  # how long the card stays on screen
+
 # Optional image-generation gateway for scripts/image_gen.py (thumbnail generation).
 IMAGE_GATEWAY_API_KEY = _require("IMAGE_GATEWAY_API_KEY")
 IMAGE_GATEWAY_BASE_URL = _require("IMAGE_GATEWAY_BASE_URL")
@@ -85,12 +92,30 @@ GAMEPLAY_DIR = MEDIA_ROOT / "gameplay"
 BROLL_DIR = MEDIA_ROOT / "broll"
 MUSIC_DIR = ASSETS_DIR / "music"
 
+# Background music is chosen to match the story's mood (see mood.py). Each
+# mood has its own subfolder under assets/music/; anything left loose in
+# assets/music/ is used as a mood-agnostic fallback.
+MOODS = ("upbeat", "dramatic", "somber")
+
+# Per-mood music level in the final mix. A somber bed under a quiet delivery
+# needs less room than an upbeat one, or it fights the narration.
+_DEFAULT_MUSIC_VOLUMES = {"upbeat": 0.09, "dramatic": 0.07, "somber": 0.05}
+_volumes_raw = _require("MUSIC_VOLUMES")
+MUSIC_VOLUMES = {**_DEFAULT_MUSIC_VOLUMES, **(json.loads(_volumes_raw) if _volumes_raw else {})}
+MUSIC_VOLUME_DEFAULT = float(_require("MUSIC_VOLUME_DEFAULT", "0.06"))
+
 # How often the broll/ library wins over gameplay/ when both have clips.
 # 0.0 = always gameplay, 1.0 = always broll.
 BROLL_MIX = float(_require("BROLL_MIX", "0.5"))
 
+# Free key from pexels.com/api -- used by fetch_broll_pexels.py to stock the
+# broll library with properly licensed, watermark-free footage.
+PEXELS_API_KEY = _require("PEXELS_API_KEY")
+
 for d in (ASSETS_DIR, OUTPUT_DIR, READY_DIR, LOGS_DIR, MODELS_DIR, MUSIC_DIR):
     d.mkdir(parents=True, exist_ok=True)
+for _mood in MOODS:
+    (MUSIC_DIR / _mood).mkdir(parents=True, exist_ok=True)
 
 
 def missing_keys():

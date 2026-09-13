@@ -12,6 +12,8 @@ from tts import synthesize
 from captions import estimate_word_timestamps
 
 W, H = 1080, 1920
+# Vertical position of the intro card, high enough to clear the captions.
+CARD_Y = 380
 
 
 def _run(cmd):
@@ -65,27 +67,28 @@ def _escape_ffmpeg_filter_path(path: Path) -> str:
 
 
 def render_beat(
-    beat: dict, visual_path: Path, work_dir: Path, index: int, card_path: Path = None,
+    beat: dict, visual_path: Path, work_dir: Path, index: int, card_frames: tuple = None,
     visual_start: float = 0.0, audio_override: Path = None,
 ) -> Path:
-    """Renders the narration over looped gameplay footage with burned captions.
+    """Renders the narration over looped footage with burned captions.
 
-    If card_path is given, the frame is split: the card image fills the top
-    quarter (1080x480) and the gameplay footage is cropped to fill the
-    remaining bottom three-quarters (1080x1440), stacked into the full
-    1080x1920 frame. Without it, gameplay footage fills the whole frame.
+    Footage is always full-bleed 1080x1920. card_frames, when given, is the
+    (dir, frame_count, fps) tuple from reddit_card.generate_card_frames(): the
+    animated intro card is composited over the top of the footage for its own
+    length, then disappears so the captions carry the rest.
 
     visual_start seeks into visual_path before looping -- lets a single long
     source clip (e.g. a 10-minute gameplay recording) start from a different
     point each render instead of always playing from frame 0.
 
     audio_override supplies a ready-made narration track (e.g. exported from
-    an external TTS tool) instead of synthesizing one with Kokoro."""
+    an external TTS tool) instead of synthesizing one."""
     work_dir.mkdir(parents=True, exist_ok=True)
     audio_path = work_dir / f"beat_{index:02d}.wav"
     ass_path = work_dir / f"beat_{index:02d}.ass"
     out_path = work_dir / f"beat_{index:02d}.mp4"
 
+    words = None
     if audio_override:
         audio_path = Path(audio_override)
         duration = probe_duration(audio_path)
@@ -94,8 +97,13 @@ def render_beat(
         # Backends pick their own container (Kokoro wav, Edge mp3).
         audio_path = Path(tts_info["path"])
         duration = tts_info["duration_sec"]
+        words = tts_info.get("words")
 
-    words = estimate_word_timestamps(beat["voiceover"], duration)
+    # Exact timings from the synthesiser keep captions locked to the audio.
+    # Estimating from word length is only a fallback (Kokoro, or imported
+    # audio) and drifts audibly over a long narration.
+    if not words:
+        words = estimate_word_timestamps(beat["voiceover"], duration)
     build_ass(words, ass_path)
     ass_arg = _escape_ffmpeg_filter_path(ass_path)
 
@@ -103,19 +111,18 @@ def render_beat(
         "-stream_loop", "-1", "-i", str(visual_path),
     ]
 
-    if card_path:
-        card_h = H // 4
-        gp_h = H - card_h
+    if card_frames:
+        frames_dir, frame_count, card_fps = card_frames
+        card_secs = frame_count / float(card_fps)
         filter_complex = (
-            f"[0:v]scale={W}:{gp_h}:force_original_aspect_ratio=increase,crop={W}:{gp_h},setsar=1[gp];"
-            f"[1:v]scale={W}:{card_h},setsar=1[card];"
-            f"[card][gp]vstack=inputs=2[stacked];"
-            f"[stacked]ass={ass_arg}[v]"
+            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[bg];"
+            f"[bg][1:v]overlay=x=0:y={CARD_Y}:eof_action=pass:enable='lte(t,{card_secs:.3f})'[ov];"
+            f"[ov]ass={ass_arg}[v]"
         )
         cmd = [
             "ffmpeg", "-y",
             *visual_input_args,
-            "-loop", "1", "-i", str(card_path),
+            "-framerate", str(card_fps), "-i", str(Path(frames_dir) / "frame_%04d.png"),
             "-i", str(audio_path),
             "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "2:a",

@@ -28,9 +28,17 @@ def _probe_duration(path: Path) -> float:
     return float(r.stdout.strip())
 
 
+# 100-nanosecond ticks per second, the unit edge-tts reports offsets in
+TICKS_PER_SEC = 10_000_000
+
+
 def synthesize(text: str, out_path: str, voice: str = None, rate: str = None) -> dict:
     """Matches tts_kokoro.synthesize()'s contract so the two are swappable.
-    rate is an edge-tts percentage string like "-8%" to slow delivery down."""
+    rate is an edge-tts percentage string like "-8%" to slow delivery down.
+
+    Also returns "words": exact per-word timings reported by the synthesiser.
+    Captions built from these stay locked to the audio, where timings estimated
+    from word length drift badly over a long narration."""
     voice = voice or config.EDGE_VOICE
     rate = rate or config.EDGE_RATE
 
@@ -39,13 +47,31 @@ def synthesize(text: str, out_path: str, voice: str = None, rate: str = None) ->
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def _run():
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        await communicate.save(str(out_path))
+        communicate = edge_tts.Communicate(text, voice, rate=rate, boundary="WordBoundary")
+        words = []
+        with open(out_path, "wb") as f:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    f.write(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    start = chunk["offset"] / TICKS_PER_SEC
+                    words.append({
+                        "word": chunk["text"],
+                        "start": round(start, 3),
+                        "end": round(start + chunk["duration"] / TICKS_PER_SEC, 3),
+                    })
+        return words
 
-    asyncio.run(_run())
+    words = asyncio.run(_run())
 
     duration = _probe_duration(out_path)
-    return {"path": str(out_path), "duration_sec": round(duration, 2), "sample_rate": 24000, "voice": voice}
+    return {
+        "path": str(out_path),
+        "duration_sec": round(duration, 2),
+        "sample_rate": 24000,
+        "voice": voice,
+        "words": words,
+    }
 
 
 if __name__ == "__main__":
