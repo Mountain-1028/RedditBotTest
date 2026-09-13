@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Renders the intro title card: a social-style rounded card carrying the
-channel's own handle, avatar, the story hook, and a decorative engagement
-footer. Overlaid on the footage for the opening seconds, then removed so the
-captions carry the rest of the video.
+Renders the story card: a social-style rounded card carrying the channel's
+own handle, avatar, the story hook, and an engagement footer. It pops in and
+animates briefly, then holds as a static overlay for the rest of the video --
+matching the reference genre, where the card stays on screen concurrently
+with the captions for the full runtime rather than a short intro that
+disappears. Cross-checked against two unrelated 400K+ subscriber channels in
+this niche (thumbnails, Sept 2026): both keep the card up throughout, and
+both show real-looking engagement numbers plus a share icon rather than a
+thumbs-up. Neither showed a Subscribe pill on the card itself (they use a
+"..." menu icon) -- that stays here anyway since it was an explicit earlier
+request, but it's worth knowing it's not the genre convention.
 
 The handle is the channel's own (CARD_HANDLE in .env) -- this is channel
 branding, not an impersonation of the original poster or of any real account.
 """
+import hashlib
 import math
 from pathlib import Path
 
@@ -127,6 +135,28 @@ def _draw_subscribe(img, box, scale=1.0, subscribed=False):
         d.ellipse([(bx - r * 0.25, by + r * 0.5), (bx + r * 0.25, by + r)], fill=(255, 255, 255, 255))
 
 
+def _engagement_numbers(post: dict) -> tuple[str, str]:
+    """Plausible like/comment counts for the footer. Derived from the post's
+    real Reddit score when we have one, so a 40K-upvote post doesn't show the
+    same flat placeholder as a 50-upvote one -- the reference cards show
+    numbers that look like real post stats, not a fixed "99+" on everything.
+    Falls back to a stable pseudo-random pick (hashed on title, not
+    time-random) so re-rendering the same post doesn't change its numbers."""
+    score = post.get("score")
+    if not isinstance(score, (int, float)) or score <= 0:
+        seed = int(hashlib.sha1((post.get("title") or "x").encode()).hexdigest(), 16)
+        score = 400 + seed % 12000
+    likes = int(score)
+    comments = max(8, int(likes * (0.06 + (likes % 7) / 100)))
+
+    def _fmt(n: int) -> str:
+        if n >= 1000:
+            return f"{n/1000:.1f}".rstrip("0").rstrip(".") + "K"
+        return str(n)
+
+    return _fmt(likes), _fmt(comments)
+
+
 def _draw_cursor(img, x, y, size=54):
     d = ImageDraw.Draw(img)
     pts = [(x, y), (x, y + size), (x + size * 0.27, y + size * 0.74),
@@ -135,10 +165,18 @@ def _draw_cursor(img, x, y, size=54):
     d.polygon(pts, fill=(255, 255, 255, 255), outline=(20, 20, 20, 255))
 
 
+CARD_STATIC_NAME = "card_static.png"
+
+
 def generate_card_frames(post: dict, out_dir: Path, seconds: float = None,
                          fps: int = 30, width: int = 1080) -> tuple:
-    """Render the intro card as an animated PNG sequence: the card pops in, the
-    Subscribe button breathes, then a cursor moves over and clicks it.
+    """Render the card's opening animation as a PNG sequence: it pops in, the
+    Subscribe button breathes, then a cursor moves over and clicks it. The
+    settled last frame is also saved as out_dir/card_static.png -- the
+    reference genre keeps the card on screen for the whole video, not just
+    the opening seconds, so the caller (assembly.render_beat) uses this still
+    image to extend the overlay past the animated window without needing a
+    frame file per second of runtime.
 
     Returns (out_dir, frame_count, fps)."""
     seconds = seconds if seconds is not None else config.CARD_SECONDS
@@ -191,6 +229,8 @@ def generate_card_frames(post: dict, out_dir: Path, seconds: float = None,
             _draw_cursor(frame, sx + (tx - sx) * ce, sy + (ty - sy) * ce)
 
         frame.save(out_dir / f"frame_{i:04d}.png")
+        if i == n - 1:
+            frame.save(out_dir / CARD_STATIC_NAME)
 
     return out_dir, n, fps
 
@@ -208,7 +248,10 @@ def _build_card(post: dict, width: int = 1080) -> Image.Image:
     f_meta = _font(FONT_SEMI, 30)
 
     probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
-    title_lines = _wrap(probe, post.get("title", ""), f_title, card_w - 2 * pad, max_lines=4)
+    # 6 lines: reference cards run 2-3 full sentences of setup (~20-35 words),
+    # not a single short title -- this needs headroom for that, with the
+    # existing ellipsis fallback in _wrap still catching genuine overflow.
+    title_lines = _wrap(probe, post.get("title", ""), f_title, card_w - 2 * pad, max_lines=6)
     line_h = f_title.getbbox("Ag")[3] + 16
 
     avatar_d = 104
@@ -240,10 +283,14 @@ def _build_card(post: dict, width: int = 1080) -> Image.Image:
         draw.text((30 + pad, y), line, font=f_title, fill=theme["title"])
         y += line_h
 
-    # decorative engagement row -- placeholder counts, same as the genre uses
+    # Engagement row: heart + comment counts derived from the post's real
+    # score where available, plus a share icon+label -- both reference
+    # channels use this exact trio (never a thumbs-up, which the earlier
+    # version had).
+    likes, comments = _engagement_numbers(post)
     fy = y + 22
     fx = 30 + pad
-    for label in ("\u2665 99+", "\U0001F4AC 99+", "\U0001F44D 99+"):
+    for label in (f"\u2665 {likes}", f"\U0001F4AC {comments}", "\u2197 Share"):
         try:
             draw.text((fx, fy), label, font=_font(FONT_EMOJI, 30), fill=theme["muted"], embedded_color=True)
         except Exception:

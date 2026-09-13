@@ -25,7 +25,10 @@ narrated video. Below is the original post. Your job:
    longer than that, condense it -- cut asides, repetition, and background
    detail, keeping the setup, the turn, and the payoff intact. Condensing means
    removing the author's less important words, never inventing replacements.
-2. Write a short, punchy on-screen title/hook (under 12 words) to open the video.
+2. Write an on-screen hook: 2-3 short sentences (roughly 20-35 words total)
+   that set up the situation and read like the opening of the post itself --
+   not a single short title. This stays visible on screen for the whole
+   video, so it needs to work as a self-contained mini-summary of the setup.
 3. Write a 1-2 sentence social caption for the post itself.
 4. Write 5-8 relevant hashtags.
 

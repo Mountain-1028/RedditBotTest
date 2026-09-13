@@ -108,7 +108,10 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
 
         gameplay_clip, gameplay_start = pick_gameplay_clip()
 
-        card_post = {"title": script.get("hook") or post["title"]}
+        # score feeds the card's engagement footer (see reddit_card
+        # ._engagement_numbers) so it reflects the post's real upvotes
+        # instead of a flat placeholder.
+        card_post = {"title": script.get("hook") or post["title"], "score": post.get("score")}
         card_frames = generate_card_frames(card_post, work_dir / "card_frames")
 
         beat = {"voiceover": script["narration"]}

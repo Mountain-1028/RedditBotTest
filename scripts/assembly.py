@@ -4,16 +4,64 @@ Renders the narration as a single "beat" -- looped gameplay footage + Kokoro
 voiceover + burned word-by-word captions -- then mixes in background music
 for the final vertical 1080x1920 MP4.
 """
+import json
 import subprocess
 from pathlib import Path
 
 import config
 from tts import synthesize
 from captions import estimate_word_timestamps
+from reddit_card import CARD_STATIC_NAME
 
 W, H = 1080, 1920
 # Vertical position of the intro card, high enough to clear the captions.
 CARD_Y = 380
+
+# Measured against the actual broll/gameplay libraries: 75 of 135 broll clips
+# are 1080x1080 (from the compilation), and a handful are 720p. Filling a
+# 1080x1920 frame from either means real upscaling -- by 1.78x and up to 1.5x
+# respectively -- not just a crop. Plain bicubic `scale` softens that; the
+# libplacebo GPU filter's ewa_lanczossharp kernel holds detail much better on
+# genuine upscales, so it's used only when the source is actually smaller than
+# the output in some dimension. A native-resolution or larger clip (most
+# gameplay footage, and the widescreen recordings) gets the cheap path --
+# there's nothing to gain and it doesn't need a GPU filter to succeed.
+UPSCALE_THRESHOLD = 0.98  # tolerate float noise from odd source dimensions
+
+
+def probe_resolution(path: Path) -> tuple[int, int] | None:
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "json", str(path)],
+        capture_output=True, text=True,
+    )
+    try:
+        stream = json.loads(r.stdout)["streams"][0]
+        return int(stream["width"]), int(stream["height"])
+    except (KeyError, IndexError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def needs_upscale(src_w: int, src_h: int, dst_w: int = W, dst_h: int = H) -> bool:
+    """True if filling the output frame (scale-to-cover, same as the crop
+    filter below) requires enlarging the source in either dimension."""
+    fill_scale = max(dst_w / src_w, dst_h / src_h)
+    return fill_scale > (1.0 / UPSCALE_THRESHOLD)
+
+
+def _fill_frame_filter(visual_path: Path) -> str:
+    """Scale-to-cover-and-crop filter for the background clip, sized to
+    whichever ffmpeg filter the source actually needs. A native-resolution or
+    larger clip uses the cheap `scale` filter -- there's nothing to gain from
+    a GPU pass. A clip smaller than the output frame (see needs_upscale) uses
+    libplacebo's ewa_lanczossharp kernel instead, which holds real detail on
+    a genuine enlargement where plain bicubic scale goes soft; reset_sar is
+    required or libplacebo leaves the wrong SAR on the stream and the output
+    plays back squashed."""
+    res = probe_resolution(visual_path)
+    if res and needs_upscale(*res):
+        return f"libplacebo=w={W}:h={H}:upscaler=ewa_lanczossharp:fit_mode=cover:reset_sar=true"
+    return f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
 
 
 def _run(cmd):
@@ -74,8 +122,11 @@ def render_beat(
 
     Footage is always full-bleed 1080x1920. card_frames, when given, is the
     (dir, frame_count, fps) tuple from reddit_card.generate_card_frames(): the
-    animated intro card is composited over the top of the footage for its own
-    length, then disappears so the captions carry the rest.
+    card plays its pop-in/Subscribe animation for its own length, then its
+    settled still frame (card_static.png, alongside the sequence) is held as
+    an overlay for the rest of the video. It does not disappear -- checked
+    against two unrelated channels in this niche, both keep the card on
+    screen for the whole runtime, concurrent with the captions.
 
     visual_start seeks into visual_path before looping -- lets a single long
     source clip (e.g. a 10-minute gameplay recording) start from a different
@@ -121,21 +172,30 @@ def render_beat(
         "-stream_loop", "-1", "-i", str(visual_path),
     ]
 
+    fill_filter = _fill_frame_filter(visual_path)
+
     if card_frames:
         frames_dir, frame_count, card_fps = card_frames
         card_secs = frame_count / float(card_fps)
+        static_card = Path(frames_dir) / CARD_STATIC_NAME
+        # Two overlay stages on the same [bg]: the animated sequence plays
+        # through card_secs, then its settled still frame takes over for the
+        # remainder -- see the render_beat docstring for why the card no
+        # longer disappears after the intro.
         filter_complex = (
-            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[bg];"
-            f"[bg][1:v]overlay=x=0:y={CARD_Y}:eof_action=pass:enable='lte(t,{card_secs:.3f})'[ov];"
-            f"[ov]ass={ass_arg}[v]"
+            f"[0:v]{fill_filter}[bg];"
+            f"[bg][1:v]overlay=x=0:y={CARD_Y}:eof_action=pass:enable='lte(t,{card_secs:.3f})'[ov1];"
+            f"[ov1][2:v]overlay=x=0:y={CARD_Y}:eof_action=pass:enable='gte(t,{card_secs:.3f})'[ov2];"
+            f"[ov2]ass={ass_arg}[v]"
         )
         cmd = [
             "ffmpeg", "-y",
             *visual_input_args,
             "-framerate", str(card_fps), "-i", str(Path(frames_dir) / "frame_%04d.png"),
+            "-loop", "1", "-i", str(static_card),
             "-i", str(audio_path),
             "-filter_complex", filter_complex,
-            "-map", "[v]", "-map", "2:a",
+            "-map", "[v]", "-map", "3:a",
             "-t", f"{duration:.3f}",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "aac", "-b:a", "160k",
@@ -143,11 +203,7 @@ def render_beat(
             str(out_path),
         ]
     else:
-        vf = (
-            f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},setsar=1,"
-            f"ass={ass_arg}"
-        )
+        vf = f"{fill_filter},ass={ass_arg}"
         cmd = [
             "ffmpeg", "-y",
             *visual_input_args,
