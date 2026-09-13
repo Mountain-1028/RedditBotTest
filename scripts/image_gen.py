@@ -45,7 +45,30 @@ def list_models():
     return r.json()
 
 
-def _await_job(job: dict, timeout: int = 180, interval: float = 3.0) -> list:
+def _normalize_images(body: dict) -> list:
+    """The gateway's actual completed-job shape is {"images": [{"url": "/user_content/...jpg", ...}]}
+    -- a relative path, resolved against the gateway's root domain, not the
+    OpenAI-style {"data": [{"url"|"b64_json": ...}]} this originally assumed.
+    That mismatch was silent: a job reaching status="completed" with real
+    image data sitting under "images" looked identical to "still working" to
+    the old check (`if body.get("data")`), so every call spun until the
+    timeout even on a successful generation. Understands both shapes."""
+    if body.get("data"):
+        return body["data"]
+    images = body.get("images")
+    if not images:
+        return []
+    root = config.IMAGE_GATEWAY_BASE_URL.split("/proxy", 1)[0]
+    out = []
+    for item in images:
+        url = item.get("url", "")
+        if url.startswith("/"):
+            url = root + url
+        out.append({**item, "url": url})
+    return out
+
+
+def _await_job(job: dict, timeout: int = 300, interval: float = 5.0) -> list:
     """Poll a queued generation job until it produces images."""
     job_id = job.get("id")
     if not job_id:
@@ -60,10 +83,18 @@ def _await_job(job: dict, timeout: int = 180, interval: float = 3.0) -> list:
             raise RuntimeError(f"Polling job {job_id} failed ({r.status_code}): {r.text[:400]}")
         body = r.json()
         status = (body.get("status") or "").lower()
-        if body.get("data"):
-            return body["data"]
+        images = _normalize_images(body)
+        if images:
+            return images
         if status in ("failed", "error", "cancelled"):
             raise RuntimeError(f"Image job {job_id} ended as {status}: {str(body)[:400]}")
+        if status == "completed":
+            # Reached a terminal success state with no recognizable image
+            # data -- a genuinely new/unhandled response shape, not "still
+            # working". Fail fast with the raw body rather than spinning to
+            # the timeout on every future call of this kind.
+            raise RuntimeError(f"Job {job_id} completed but no image data was found in a "
+                              f"recognized shape: {str(body)[:400]}")
     raise TimeoutError(f"Image job {job_id} did not finish within {timeout}s")
 
 
@@ -84,9 +115,9 @@ def generate_image(prompt: str, out_path: Path, model: str = None,
     )
     if resp.status_code == 202:
         # Submit-then-poll: the gateway queues the job and returns an id.
-        data = _await_job(resp.json(), timeout=180)
+        data = _await_job(resp.json())
     elif resp.status_code == 200:
-        data = resp.json().get("data", [])
+        data = _normalize_images(resp.json())
     else:
         raise RuntimeError(f"Image gateway request failed ({resp.status_code}): {resp.text[:500]}")
     if not data:

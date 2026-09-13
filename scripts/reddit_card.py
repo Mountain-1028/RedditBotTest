@@ -19,22 +19,25 @@ import hashlib
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 import config
 
-# Room reserved around the visible card for the drop shadow to blur into --
-# without this the blur clips hard at the canvas edge and looks like a stripe
-# instead of a soft glow. Shadow spec (offset/blur/opacity) came from a
-# second design opinion (GPT-4o-mini, asked to critique a render of this
-# exact card) then tuned by eye at this canvas's actual scale -- its first
-# pass gave web-card-scale numbers (e.g. 16px fonts) that didn't match a
-# 1080px-wide card using 46-56px fonts, so treat it as a starting point
-# rather than gospel.
-SHADOW_MARGIN = 50
-SHADOW_BLUR = 24
-SHADOW_OFFSET = (0, 10)
-SHADOW_ALPHA = 70  # 0-255
+# AI-generated bell icon (nano-banana-2 / gemini-3.1-flash-image, via
+# image_gen.py) -- replaces an earlier hand-drawn PIL version that read as a
+# helmet. Not checked into git (assets/* is bulk-media-ignored, same as the
+# avatar), so this degrades to the old primitive shapes if the file is
+# missing rather than crashing a fresh checkout.
+BELL_ICON_PATH = config.ASSETS_DIR / "branding" / "bell_icon.png"
+_bell_icon_cache = {}
+
+
+def _load_bell_icon():
+    if "img" not in _bell_icon_cache:
+        _bell_icon_cache["img"] = (
+            Image.open(BELL_ICON_PATH).convert("RGBA") if BELL_ICON_PATH.exists() else None
+        )
+    return _bell_icon_cache["img"]
 
 FONT_DIR = Path(r"C:\Windows\Fonts")
 FONT_BOLD = FONT_DIR / "segoeuib.ttf"
@@ -136,18 +139,27 @@ def _draw_subscribe(img, box, scale=1.0, subscribed=False):
     label = "Subscribed" if subscribed else "Subscribe"
     f = _font(FONT_BOLD, int(h * 0.46))
     tw = d.textlength(label, font=f)
-    # Bell sized and gapped from measured text width, not a guessed padding
-    # constant -- the earlier fixed 0.55h pad was tuned against "Subscribe"
-    # and overlapped once the label switched to the longer "Subscribed".
-    bell_size = h * 0.42
-    gap = h * 0.18
+    # Gap/bell size computed from the actual measured label width, not a
+    # constant -- a fixed pad tuned against "Subscribe" overlapped once the
+    # label switched to the longer "Subscribed".
+    bell_icon = _load_bell_icon() if subscribed else None
+    bell_size = h * 0.44
+    gap = h * 0.16
     bell_pad = (bell_size + gap) if subscribed else 0
     d.text((cx - (tw + bell_pad) / 2, cy - h * 0.27), label, font=f, fill=(255, 255, 255, 255))
 
     if subscribed:
         bx = cx - (tw + bell_pad) / 2 + tw + gap
-        by = cy - bell_size * 0.55
-        _draw_bell_icon(d, (bx, by, bell_size), (255, 255, 255, 255))
+        by = cy - bell_size / 2
+        if bell_icon is not None:
+            icon = bell_icon.resize((int(bell_size), int(bell_size)), Image.LANCZOS)
+            img.paste(icon, (int(bx), int(by)), icon)
+        else:  # fallback if the generated asset is missing (fresh checkout)
+            r = bell_size * 0.38
+            cx2, cy2 = bx + bell_size / 2, by + bell_size / 2
+            d.pieslice([(cx2 - r, cy2 - r), (cx2 + r, cy2 + r)], start=180, end=360, fill=(255, 255, 255, 255))
+            d.rectangle([(cx2 - r, cy2), (cx2 + r, cy2 + r * 0.5)], fill=(255, 255, 255, 255))
+            d.ellipse([(cx2 - r * 0.25, cy2 + r * 0.5), (cx2 + r * 0.25, cy2 + r)], fill=(255, 255, 255, 255))
 
 
 def _engagement_numbers(post: dict) -> tuple[str, str]:
@@ -170,85 +182,6 @@ def _engagement_numbers(post: dict) -> tuple[str, str]:
         return str(n)
 
     return _fmt(likes), _fmt(comments)
-
-
-# Footer icons, drawn as matched vector shapes rather than emoji glyphs.
-# The earlier version mixed Unicode symbols (heart/speech-bubble/arrow)
-# rendered through Windows' Segoe emoji font, which draws each one in a
-# completely different visual style with no control over it: a solid-fill
-# heart, an outline speech bubble, and an arrow-in-a-blue-box for "share" --
-# three unrelated icon languages in one row. Drawing them all here fixes the
-# stroke width, proportions, and color treatment to actually match.
-ICON_STROKE = 0.10  # stroke width as a fraction of icon size, shared by all three
-
-
-def _draw_heart_icon(draw, box, color):
-    x, y, s = *box[:2], box[2]
-    lobe_r = s * 0.28
-    cx1, cx2, cy = x + lobe_r, x + s - lobe_r, y + lobe_r * 0.95
-    draw.ellipse([(cx1 - lobe_r, cy - lobe_r), (cx1 + lobe_r, cy + lobe_r)], fill=color)
-    draw.ellipse([(cx2 - lobe_r, cy - lobe_r), (cx2 + lobe_r, cy + lobe_r)], fill=color)
-    draw.polygon([(x, cy), (x + s / 2, y + s * 0.98), (x + s, cy),
-                 (x + s * 0.86, cy - lobe_r * 0.3), (x + s * 0.14, cy - lobe_r * 0.3)], fill=color)
-
-
-def _draw_comment_icon(draw, box, color):
-    x, y, s = *box[:2], box[2]
-    w = max(2, int(s * ICON_STROKE))
-    body_h = s * 0.78
-    draw.rounded_rectangle([(x, y), (x + s, y + body_h)], radius=body_h * 0.32, outline=color, width=w)
-    tail_x = x + s * 0.28
-    draw.polygon([(tail_x, y + body_h - w * 0.5), (tail_x, y + s), (tail_x + s * 0.24, y + body_h - w * 0.5)],
-                fill=color)
-
-
-def _draw_share_icon(draw, box, color):
-    """Diagonal arrow breaking out of an open corner bracket -- the same
-    "share/open externally" glyph as Twitter/X and iOS, at the same stroke
-    weight as the other two icons instead of a colored emoji box."""
-    x, y, s = *box[:2], box[2]
-    w = max(2, int(s * ICON_STROKE))
-    draw.line([(x + s * 0.32, y + s), (x + s * 0.32, y + s * 0.68), (x + s * 0.64, y + s * 0.68)],
-             fill=color, width=w, joint="curve")
-    ax, ay = x + s * 0.30, y + s * 0.70
-    bx, by = x + s * 0.92, y + s * 0.08
-    draw.line([(ax, ay), (bx, by)], fill=color, width=w)
-    head = s * 0.30
-    draw.line([(bx - head, by), (bx, by), (bx, by + head)], fill=color, width=w, joint="curve")
-
-
-def _draw_bell_icon(draw, box, color):
-    """A real bell silhouette, built from separate primitives rather than one
-    hand-rolled polygon (the first rewrite got the taper direction backwards
-    -- the "flare" was narrower than the dome's shoulders, so it pinched
-    inward like a cone instead of widening like a bell): a rounded dome, a
-    trapezoid body that widens going down, a wide flat base rim, and a
-    clapper hanging just clear of it. Coordinates are fractions of the
-    (x, y, size) bounding box."""
-    x, y, s = box
-    cx = x + s * 0.5
-
-    dome_r = s * 0.26
-    dome_cy = y + s * 0.30           # dome's own center -- its shoulders sit here
-    body_bottom = y + s * 0.66
-    flare_half = dome_r * 1.35        # base is wider than the dome's shoulders
-
-    draw.pieslice([(cx - dome_r, dome_cy - dome_r), (cx + dome_r, dome_cy + dome_r)],
-                 start=180, end=360, fill=color)
-    draw.polygon([(cx - dome_r, dome_cy), (cx + dome_r, dome_cy),
-                 (cx + flare_half, body_bottom), (cx - flare_half, body_bottom)], fill=color)
-    rim_h = s * 0.09
-    draw.ellipse([(cx - flare_half * 1.08, body_bottom - rim_h / 2),
-                 (cx + flare_half * 1.08, body_bottom + rim_h / 2)], fill=color)
-
-    # Small mounting loop at the very top and the clapper hanging below the
-    # rim -- both of these, more than the body shape, are what read as
-    # "bell" rather than "dome/badge".
-    draw.ellipse([(cx - s * 0.035, dome_cy - dome_r - s * 0.06),
-                 (cx + s * 0.035, dome_cy - dome_r + s * 0.02)], fill=color)
-    clap_r = s * 0.055
-    clap_cy = body_bottom + rim_h / 2 + clap_r * 1.3
-    draw.ellipse([(cx - clap_r, clap_cy - clap_r), (cx + clap_r, clap_cy + clap_r)], fill=color)
 
 
 def _draw_cursor(img, x, y, size=54):
@@ -281,14 +214,10 @@ def generate_card_frames(post: dict, out_dir: Path, seconds: float = None,
     base = _build_card(post, width)
     cw, ch = base.size
 
-    # Subscribe pill sits on the footer row, right-aligned inside the card.
-    # Positioned off the visible card's bottom edge, not the canvas height --
-    # the canvas extends SHADOW_MARGIN (+ the shadow's vertical offset)
-    # past the card itself so the drop shadow has room to blur into.
-    visible_bottom = ch - SHADOW_MARGIN - SHADOW_OFFSET[1]
+    # Subscribe pill sits on the footer row, right-aligned inside the card
     btn_w, btn_h = 250, 74
     btn_x = width - 30 - 44 - btn_w
-    btn_y = visible_bottom - 44 - btn_h - 4
+    btn_y = ch - 44 - btn_h - 4
     box = (btn_x, btn_y, btn_w, btn_h)
 
     n = max(1, int(seconds * fps))
@@ -333,20 +262,9 @@ def generate_card_frames(post: dict, out_dir: Path, seconds: float = None,
     return out_dir, n, fps
 
 
-def _vcenter_box(anchor_top, anchor_bottom, size):
-    """Top-left y for a `size`-tall box whose vertical center matches the
-    center of an (anchor_top, anchor_bottom) ink span -- used to align an
-    icon against a text glyph's actual visual center rather than a guessed
-    pixel offset."""
-    return (anchor_top + anchor_bottom) / 2 - size / 2
-
-
 def _build_card(post: dict, width: int = 1080) -> Image.Image:
     """The static card, without the Subscribe pill (that's drawn per frame so
-    it can animate). Returns an RGBA image sized to its content, with a soft
-    drop shadow baked in -- SHADOW_MARGIN of transparent canvas surrounds the
-    visible card on top/bottom so the blur has room to fall off instead of
-    clipping at the image edge."""
+    it can animate). Returns an RGBA image sized to its content."""
     theme = THEMES.get((config.CARD_THEME or "light").lower(), THEMES["light"])
     handle = config.CARD_HANDLE
     pad = 44
@@ -354,7 +272,7 @@ def _build_card(post: dict, width: int = 1080) -> Image.Image:
 
     f_handle = _font(FONT_BOLD, 46)
     f_title = _font(FONT_SEMI, 56)
-    f_meta = _font(FONT_SEMI, 32)
+    f_meta = _font(FONT_SEMI, 30)
 
     probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
     # 6 lines: reference cards run 2-3 full sentences of setup (~20-35 words),
@@ -363,91 +281,63 @@ def _build_card(post: dict, width: int = 1080) -> Image.Image:
     title_lines = _wrap(probe, post.get("title", ""), f_title, card_w - 2 * pad, max_lines=6)
     line_h = f_title.getbbox("Ag")[3] + 16
 
-    avatar_d = 104
+    # Emoji row's vertical gap below the handle is measured from the
+    # handle's actual ink extent (descenders included) rather than a fixed
+    # pixel offset -- a fixed "+52" only happened to clear the old handle
+    # ("@RedditStories" has no descenders); "@DailyStoriesCentral" has a "y"
+    # in "Daily" that dipped straight into the emoji row below it.
+    # textbbox((0,0), ...) returns ink extents relative to the drawn origin
+    # (hy below), NOT relative to each other -- bbox[3] alone (not
+    # bbox[3]-bbox[1]) is the distance from hy down to the bottom of the ink.
     handle_bbox = probe.textbbox((0, 0), handle, font=f_handle)
-    handle_h = handle_bbox[3] - handle_bbox[1]
+    emoji_gap = 14
     emoji_h = 40 if config.CARD_EMOJI else 0
-    header_content_h = handle_h + (14 + emoji_h if emoji_h else 0)
-    header_h = max(avatar_d, header_content_h)
-    card_h = pad + header_h + 30 + len(title_lines) * line_h + 30 + 44 + pad
+    hy_offset = 6  # matches the ax/ay-relative "hy = ay + 6" below
+    header_content_h = hy_offset + handle_bbox[3] + (emoji_gap + emoji_h if config.CARD_EMOJI else 0)
 
-    top = SHADOW_MARGIN
-    total_w, total_h = width, top + card_h + SHADOW_MARGIN + SHADOW_OFFSET[1]
-    card_box = [(30, top), (30 + card_w, top + card_h)]
+    avatar_d = 104
+    header_h = max(avatar_d, header_content_h, 100)
+    card_h = pad + header_h + 26 + len(title_lines) * line_h + 30 + 44 + pad
 
-    # Shadow: a blurred, offset copy of the card's own silhouette, composited
-    # first so the crisp card draws on top of it.
-    shadow = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
-    sdraw = ImageDraw.Draw(shadow)
-    sx, sy = SHADOW_OFFSET
-    sdraw.rounded_rectangle([(card_box[0][0] + sx, card_box[0][1] + sy),
-                            (card_box[1][0] + sx, card_box[1][1] + sy)],
-                           radius=38, fill=(0, 0, 0, SHADOW_ALPHA))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(SHADOW_BLUR))
-
-    img = shadow
+    img = Image.new("RGBA", (width, card_h + 30), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle(card_box, radius=38, fill=theme["card"])
+    draw.rounded_rectangle([(30, 8), (30 + card_w, 8 + card_h)], radius=38, fill=theme["card"])
 
-    # Header: avatar centered against the handle(+emoji-row) text block as a
-    # whole, rather than pinned to the same y as the handle's top -- with an
-    # emoji row the old fixed offsets left the avatar visibly high.
-    ax = 30 + pad
-    hx = ax + avatar_d + 22
-    block_top = top + pad
-    block_h = header_content_h
-    ay = int(_vcenter_box(block_top, block_top + header_h, avatar_d)) if header_h > avatar_d else block_top
-    hy = int(_vcenter_box(block_top, block_top + header_h, block_h)) if header_h > block_h else block_top
-
+    ax, ay = 30 + pad, 8 + pad
     _paste_avatar(img, config.CARD_AVATAR, (ax, ay, avatar_d), theme["avatar_bg"])
 
-    draw.text((hx, hy - handle_bbox[1]), handle, font=f_handle, fill=theme["handle"])
-    badge_d = 34
+    hx = ax + avatar_d + 22
+    hy = ay + hy_offset
+    draw.text((hx, hy), handle, font=f_handle, fill=theme["handle"])
     badge_x = hx + draw.textlength(handle, font=f_handle) + 12
-    badge_y = _vcenter_box(hy, hy + handle_h, badge_d)
-    _verified_badge(draw, badge_x, badge_y, badge_d)
+    _verified_badge(draw, badge_x, hy + 8, 34)
 
     if config.CARD_EMOJI:
         try:
             f_emoji = ImageFont.truetype(str(FONT_EMOJI), 34)
-            draw.text((hx, hy + handle_h + 14), config.CARD_EMOJI, font=f_emoji, embedded_color=True)
+            emoji_y = hy + handle_bbox[3] + emoji_gap
+            draw.text((hx, emoji_y), config.CARD_EMOJI, font=f_emoji, embedded_color=True)
         except Exception:
             pass
 
-    y = block_top + header_h + 30
+    y = ay + header_h + 26
     for line in title_lines:
         draw.text((30 + pad, y), line, font=f_title, fill=theme["title"])
         y += line_h
 
     # Engagement row: heart + comment counts derived from the post's real
-    # score where available, plus a share icon -- both reference channels use
-    # exactly this trio (never a thumbs-up, which the earlier version had).
-    # All three icons are hand-drawn vector shapes at one shared stroke
-    # weight (see _draw_*_icon above) rather than emoji glyphs -- Windows
-    # renders those three symbols in three unrelated visual styles with no
-    # way to control it, which is what made the footer look inconsistent.
+    # score where available, plus a share icon+label -- both reference
+    # channels use this exact trio (never a thumbs-up, which the earlier
+    # version had).
     likes, comments = _engagement_numbers(post)
-    icon_s = 40
     fy = y + 22
     fx = 30 + pad
-    text_bbox = probe.textbbox((0, 0), "0", font=f_meta)
-    text_h = text_bbox[3] - text_bbox[1]
-    icon_y = _vcenter_box(fy, fy + text_h, icon_s)
-    text_y = fy - text_bbox[1]
-
-    _draw_heart_icon(draw, (fx, icon_y, icon_s), (237, 73, 86, 255))
-    tx = fx + icon_s + 14
-    draw.text((tx, text_y), likes, font=f_meta, fill=theme["muted"])
-    fx = tx + draw.textlength(likes, font=f_meta) + 46
-
-    _draw_comment_icon(draw, (fx, icon_y, icon_s), theme["muted"])
-    tx = fx + icon_s + 14
-    draw.text((tx, text_y), comments, font=f_meta, fill=theme["muted"])
-    fx = tx + draw.textlength(comments, font=f_meta) + 46
-
-    _draw_share_icon(draw, (fx, icon_y, icon_s), theme["muted"])
-    tx = fx + icon_s + 14
-    draw.text((tx, text_y), "Share", font=f_meta, fill=theme["muted"])
+    for label in (f"\u2665 {likes}", f"\U0001F4AC {comments}", "\u2197 Share"):
+        try:
+            draw.text((fx, fy), label, font=_font(FONT_EMOJI, 30), fill=theme["muted"], embedded_color=True)
+        except Exception:
+            draw.text((fx, fy), label.split()[-1], font=f_meta, fill=theme["muted"])
+        fx += 150
 
     return img
 
@@ -455,9 +345,8 @@ def _build_card(post: dict, width: int = 1080) -> Image.Image:
 def generate_card_image(post: dict, out_path: Path, width: int = 1080) -> Path:
     """Static single-frame card (used for stills/previews)."""
     img = _build_card(post, width)
-    visible_bottom = img.height - SHADOW_MARGIN - SHADOW_OFFSET[1]
     btn_w, btn_h = 250, 74
-    _draw_subscribe(img, (width - 30 - 44 - btn_w, visible_bottom - 44 - btn_h - 4, btn_w, btn_h))
+    _draw_subscribe(img, (width - 30 - 44 - btn_w, img.height - 44 - btn_h - 4, btn_w, btn_h))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
