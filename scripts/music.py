@@ -14,12 +14,29 @@ Usage:
     python3 music.py --pick somber   # show what a somber story would get
 """
 import argparse
+import json
 import random
 from pathlib import Path
 
 import config
 
 EXTENSIONS = ("*.mp3", "*.m4a", "*.aac", "*.wav", "*.ogg", "*.flac")
+CREDITS_PATH = config.MUSIC_DIR / "credits.json"
+
+
+def credit_for(track: Path) -> str:
+    """The attribution line a track requires, or "" if it needs none.
+
+    Everything fetch_music.py pulls is CC BY, which obliges the credit to
+    appear wherever the track is used -- so this gets copied into the video's
+    ready_to_post/*.txt for pasting into the upload description."""
+    if not CREDITS_PATH.exists():
+        return ""
+    try:
+        credits = json.loads(CREDITS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return (credits.get(Path(track).name) or {}).get("attribution", "")
 
 
 def _tracks_in(directory: Path) -> list:

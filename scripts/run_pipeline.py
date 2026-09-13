@@ -23,7 +23,7 @@ from gameplay_footage import pick_gameplay_clip
 from reddit_card import generate_card_frames
 from assembly import render_beat, mix_music, probe_duration
 from mood import classify
-from music import pick_track, volume_for
+from music import pick_track, volume_for, credit_for
 from qa import run_qa
 
 
@@ -51,7 +51,9 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
         # rather than after a full encode.
         story_mood = classify(script)
         track = pick_track(story_mood["mood"])
-        log["mood"] = {**story_mood, "track": track["path"].name, "matched_folder": track["matched"]}
+        music_credit = credit_for(track["path"])
+        log["mood"] = {**story_mood, "track": track["path"].name,
+                       "matched_folder": track["matched"], "music_credit": music_credit}
         note = "" if track["matched"] else "  (fallback -- no tracks in that mood folder)"
         print(f"[{run_id}] Mood: {story_mood['mood']} ({story_mood['source']}) "
               f"-> {track['path'].name}{note}")
@@ -89,6 +91,8 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
                 f"Caption: {script.get('caption')}\n\n"
                 f"Hashtags: {' '.join(script.get('hashtags', []))}\n\n"
                 f"Mood: {story_mood['mood']} ({story_mood['source']}) - music: {track['path'].name}\n\n"
+                # CC BY obliges this to appear in the upload description.
+                f"{('MUSIC CREDIT (must go in the description): ' + music_credit + chr(10) + chr(10)) if music_credit else ''}"
                 f"Source: {post.get('permalink')}\n"
             )
             log["status"] = "ready"

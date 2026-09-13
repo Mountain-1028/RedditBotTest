@@ -1,0 +1,92 @@
+Music credits -- CC BY requires these to appear wherever the track is used.
+run_pipeline.py copies the relevant line into each video's ready_to_post/*.txt.
+
+[upbeat]
+  ov_0ee3f27c.mp3
+    "Feel So Good" by Felixjd is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/367018
+  ov_3d2e7e62.mp3
+    "Super Power Pop Rock" by Kara Square is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1163228
+  ov_4bfc7dbf.mp3
+    "Way In" by Instil is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1655357
+  ov_784e04b6.mp3
+    "Uplifting Corporate" by Soundrider/Dope is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1670597
+  ov_8fd7d62d.mp3
+    "Le Surfuku" by Léo Lago is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1215453
+  ov_9bf23ad0.mp3
+    "Key, Kida & Eddie (feat. ICD) - Sundalo (acoustic)" by Key, Kida & Eddie is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1522600
+  ov_cc1cf6e3.mp3
+    "Vox Vs. Uke (Unreal_DM Mix)" by ccMixter is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1561064
+  ov_ea4ef155.mp3
+    "Lucky Acoustic" by Jesse Keller is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1540859
+
+[dramatic]
+  ov_409e84cd.mp3
+    "Behind the mind" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1847309
+  ov_6f65e2ab.mp3
+    "Suspense and Tension-stem-5-1min" by 3minutetunes is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1172853
+  ov_8b632c58.mp3
+    "7" by Ivan Tregub (BER) is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1503874
+  ov_8eb9ae3f.mp3
+    "8." by Ivan Tregub (BER) is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1503876
+  ov_92e803c8.mp3
+    "Suspense and Tension-stem-4-1min" by 3minutetunes is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1172852
+  ov_a0729af4.mp3
+    "Disabled emotions suite - Part 4" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/202934
+  ov_a3c3886d.mp3
+    "Suspense and Tension-stem-7-1min" by 3minutetunes is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1172855
+  ov_c7a34551.mp3
+    "Coming From Above" by Jesse Keller is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1540834
+  ov_cfc1029b.mp3
+    "Gaining Steam" by Jesse Keller is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1540837
+  ov_d23ac66a.mp3
+    "Ljosalfheimr IV" by Ivan Tregub (BER) is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1529567
+  ov_d967ca40.mp3
+    "The Middle Zone Menace" by JGMillan is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1768387
+  ov_e85329c8.mp3
+    "Bass Movement" by Jesse Keller is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1540832
+
+[somber]
+  ov_0c3eb077.mp3
+    "Kissing Streams" by Rivers and Leaves is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1665671
+  ov_109ff8e3.mp3
+    "Far Away" by VITNE is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1447645
+  ov_5193aa1b.mp3
+    "Sad Piano" by Alexander Blu is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1476512
+  ov_5893b2f7.mp3
+    "Soft Orange Glow" by Josh Woodward is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/215756
+  ov_82405fcc.mp3
+    "Ephemeral living" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/373300
+  ov_b6af2fd0.mp3
+    "Killing earth" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/373259
+  ov_dee9e418.mp3
+    "Blind girl (feat. Dia Yiannopoulou)" by zero-project is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1870772
+  ov_f901142d.mp3
+    "Ghost" by madelyn munsell is licensed under CC BY 3.0. To view a copy of this license, visit https://creativecommons.org/licenses/by/3.0/.
+    source: https://www.jamendo.com/track/1174818

@@ -15,6 +15,10 @@ assets/gameplay/*
 !assets/music/
 assets/music/*
 !assets/music/.gitkeep
+# The audio stays out of the repo, but the CC BY credit record must not: it is
+# the record of what every published video is obliged to attribute.
+!assets/music/credits.json
+!assets/music/ATTRIBUTION.txt
 Claude outputs/
 
 # Python
