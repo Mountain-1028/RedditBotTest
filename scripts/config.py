@@ -54,12 +54,16 @@ EDGE_RATE = _require("EDGE_RATE", "+0%")
 # truth -- YouTube Shorts/Reels cap at 180s, TikTok allows far longer.
 VIDEO_MIN_SEC = float(_require("VIDEO_MIN_SEC", "15"))
 VIDEO_MAX_SEC = float(_require("VIDEO_MAX_SEC", "180"))
-# Rate used to budget the FIRST narration draft only. Deliberately set near
-# the slow end of what's been measured (2.27 w/s on a dialogue-heavy script,
-# 2.90 on flowing prose -- every line break becomes a spoken pause, so no
-# single constant predicts both). The authority on length is the synthesized
-# audio, measured in run_pipeline._fit_narration before the render.
-NARRATION_WORDS_PER_SEC = float(_require("NARRATION_WORDS_PER_SEC", "2.40"))
+# Rate used to budget the FIRST narration draft only. Scaled from the
+# previous measurements (2.27-2.90 w/s at EDGE_RATE=-5%) by the actual
+# measured speedup from moving EDGE_RATE to +50% (1.494x, timed directly --
+# a fixed sentence ran 8.50s at +0% vs 5.69s at +50%, not assumed from the
+# percentage). Kept at the slow end of that scaled range since dialogue-heavy
+# scripts still pause more than flowing prose regardless of rate. The
+# authority on length is still the synthesized audio, measured in
+# run_pipeline._fit_narration before the render -- this constant only sizes
+# the first draft so it doesn't come in reliably too short at the new rate.
+NARRATION_WORDS_PER_SEC = float(_require("NARRATION_WORDS_PER_SEC", "3.60"))
 
 
 def narration_word_budget(safety: float = 0.88) -> int:
@@ -100,11 +104,12 @@ MUSIC_DIR = ASSETS_DIR / "music"
 MOODS = ("upbeat", "dramatic", "somber")
 
 # Per-mood music level in the final mix. A somber bed under a quiet delivery
-# needs less room than an upbeat one, or it fights the narration.
-_DEFAULT_MUSIC_VOLUMES = {"upbeat": 0.09, "dramatic": 0.07, "somber": 0.05}
+# needs less room than an upbeat one, or it fights the narration. Lowered
+# 15% across the board (0.09/0.07/0.05 -> 0.0765/0.0595/0.0425) per request.
+_DEFAULT_MUSIC_VOLUMES = {"upbeat": 0.0765, "dramatic": 0.0595, "somber": 0.0425}
 _volumes_raw = _require("MUSIC_VOLUMES")
 MUSIC_VOLUMES = {**_DEFAULT_MUSIC_VOLUMES, **(json.loads(_volumes_raw) if _volumes_raw else {})}
-MUSIC_VOLUME_DEFAULT = float(_require("MUSIC_VOLUME_DEFAULT", "0.06"))
+MUSIC_VOLUME_DEFAULT = float(_require("MUSIC_VOLUME_DEFAULT", "0.051"))  # also -15% (was 0.06)
 
 # How often the broll/ library wins over gameplay/ when both have clips.
 # 0.0 = always gameplay, 1.0 = always broll.
