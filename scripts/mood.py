@@ -20,6 +20,7 @@ Usage:
 import json
 import re
 import sys
+import time
 
 import config
 from llm_client import call_llm
@@ -111,14 +112,23 @@ def heuristic_mood(text: str) -> dict:
     return {"mood": best, "why": f"keyword score {scores}", "scores": scores}
 
 
-def classify(script, attempts: int = 2) -> dict:
-    """Return {"mood", "why", "source"} for a script dict or raw narration."""
+def classify(script, attempts: int = 4) -> dict:
+    """Return {"mood", "why", "source"} for a script dict or raw narration.
+
+    Attempts back off (2s, 8s, 32s) rather than firing back-to-back -- the
+    same gateway 503 "model overloaded" outage that hit narration/QA also
+    hits this call, and three instant retries land in the same window as one.
+    Falling back to keywords after only two unspaced attempts meant an outage
+    of a few seconds was enough to hand every video of that run to the
+    keyword scorer, which gets 1/5 on the trap cases this exists to catch."""
     narration = script["narration"] if isinstance(script, dict) else str(script)
     title = script.get("hook") or script.get("original_title", "") if isinstance(script, dict) else ""
     text = f"{title}\n\n{narration}".strip()
 
     last_error = None
-    for _ in range(attempts):
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(2 * (4 ** (attempt - 1)))
         try:
             raw = call_llm(
                 model=config.LLM_MODEL_SCRIPT,
