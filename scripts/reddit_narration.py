@@ -64,6 +64,68 @@ Narration:
 Return ONLY the shortened narration text. No preamble, no quotes, no markdown."""
 
 
+GRAMMAR_PROMPT = """Proofread this narration for grammar, spelling, and punctuation errors ONLY.
+
+Do not rephrase, condense, improve style, or change wording choices -- fix
+only objective mistakes (a misspelled word, subject-verb disagreement, a
+missing or wrong punctuation mark, a duplicated word). If a sentence is
+already correct, leave it untouched. This runs right before the text is
+recorded as final audio, so it needs to be exactly the original text, just
+corrected -- not a rewrite.
+
+Narration:
+{narration}
+
+Return ONLY valid JSON, no markdown fences, no commentary:
+{{
+  "corrected": "the full narration, grammar/spelling fixed, otherwise identical to the original",
+  "corrections": ["short description of each fix, e.g. 'affect -> effect'; empty list if none needed"]
+}}"""
+
+
+def grammar_check(narration: str, attempts: int = 3) -> dict:
+    """Proofreading pass on the final narration text, run right before it's
+    recorded -- catches typos/grammar slips left over from generation or
+    introduced by condense_narration(). Returns {"text", "corrections",
+    "changed"}; falls back to the original narration untouched on any
+    failure, since a broken proofread pass corrupting the video is worse than
+    skipping it."""
+    last_error = None
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(2 * (4 ** (attempt - 1)))
+        try:
+            raw = call_llm(
+                model=config.LLM_MODEL_SCRIPT,
+                system="You are a meticulous proofreader. You fix only objective grammar and "
+                       "spelling errors and change nothing else. You always return strict JSON.",
+                user=GRAMMAR_PROMPT.format(narration=narration),
+                max_tokens=4000,
+                temperature=0.1,
+                json_mode=True,
+            )
+            data = _extract_json(raw)
+            corrected = (data.get("corrected") or "").strip()
+            if not corrected:
+                raise ValueError("empty corrected text")
+
+            # A proofread shouldn't meaningfully change length -- if it does,
+            # the model rewrote rather than corrected, and the rewrite is
+            # more likely to introduce a new problem than fix one.
+            orig_words, new_words = len(narration.split()), len(corrected.split())
+            if abs(new_words - orig_words) > max(10, orig_words * 0.12):
+                raise ValueError(f"proofread changed length too much ({orig_words} -> {new_words} "
+                                 f"words) -- looks like a rewrite, not a correction")
+
+            return {"text": corrected, "corrections": data.get("corrections") or [],
+                    "changed": corrected != narration.strip()}
+        except Exception as e:
+            last_error = e
+
+    print(f"  grammar check failed ({last_error}); keeping narration as-is")
+    return {"text": narration, "corrections": [], "changed": False, "error": str(last_error)}
+
+
 def condense_narration(narration: str, target_words: int, attempts: int = 3) -> str:
     """Shorten narration to fit the video slot. Used when synthesized audio
     comes back over the cap -- measured length, not an estimate.

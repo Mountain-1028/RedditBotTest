@@ -18,7 +18,7 @@ from pathlib import Path
 
 import config
 from reddit_source import pick_post
-from reddit_narration import generate_narration, condense_narration
+from reddit_narration import generate_narration, condense_narration, grammar_check
 from tts import synthesize
 from gameplay_footage import pick_gameplay_clip
 from reddit_card import generate_card_frames
@@ -41,6 +41,7 @@ def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2)
     full render has already been paid for."""
     cap = config.VIDEO_MAX_SEC
     info = synthesize(script["narration"], str(work_dir / "narration.mp3"))
+    fits = False
 
     for attempt in range(attempts + 1):
         words = len(script["narration"].split())
@@ -48,7 +49,8 @@ def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2)
         print(f"[{run_id}] Narration audio: {info['duration_sec']:.1f}s "
               f"({words} words, {rate:.2f} w/s)")
         if info["duration_sec"] <= cap:
-            return info
+            fits = True
+            break
         if attempt == attempts:
             break
 
@@ -64,8 +66,25 @@ def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2)
         script["narration"] = shorter
         info = synthesize(script["narration"], str(work_dir / f"narration_fit{attempt}.mp3"))
 
-    print(f"[{run_id}] Still {info['duration_sec']:.1f}s, over the {cap:.0f}s cap; "
-          f"rendering anyway (QA will flag it)")
+    if not fits:
+        print(f"[{run_id}] Still {info['duration_sec']:.1f}s, over the {cap:.0f}s cap; "
+              f"rendering anyway (QA will flag it)")
+
+    # Proofread the text that's actually going to be recorded -- run last,
+    # after any condensing, since condensing is its own LLM call and can
+    # introduce a grammar slip that the original draft didn't have. Any
+    # correction changes the words, so the audio has to be re-recorded or the
+    # captions (built from this synthesis's word timings) would show text
+    # that doesn't match what's spoken.
+    check = grammar_check(script["narration"])
+    if check["corrections"]:
+        print(f"[{run_id}] Grammar check: {len(check['corrections'])} fix(es) -- "
+              + "; ".join(check["corrections"][:4]))
+    if check["changed"]:
+        script["narration"] = check["text"]
+        info = synthesize(script["narration"], str(work_dir / "narration_final.mp3"))
+        print(f"[{run_id}] Re-recorded after grammar fixes: {info['duration_sec']:.1f}s")
+    info["grammar"] = {"corrections": check["corrections"], "changed": check["changed"]}
     return info
 
 
@@ -90,6 +109,7 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
         tts_info = None
         if not audio_override:
             tts_info = _fit_narration(script, work_dir, run_id)
+            log["grammar_check"] = tts_info.get("grammar")
             (work_dir / "script.json").write_text(json.dumps(script, indent=2))
 
         # Decided before the render so the run log records the mood even if a
