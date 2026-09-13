@@ -18,13 +18,55 @@ from pathlib import Path
 
 import config
 from reddit_source import pick_post
-from reddit_narration import generate_narration
+from reddit_narration import generate_narration, condense_narration
+from tts import synthesize
 from gameplay_footage import pick_gameplay_clip
 from reddit_card import generate_card_frames
 from assembly import render_beat, mix_music, probe_duration
 from mood import classify
 from music import pick_track, volume_for, credit_for
 from qa import run_qa
+
+
+def _fit_narration(script: dict, work_dir: Path, run_id: str, attempts: int = 2) -> dict:
+    """Synthesize the narration and, if it overruns VIDEO_MAX_SEC, condense and
+    re-synthesize until it fits.
+
+    Estimating length from a words-per-second constant does not work: measured
+    across two real scripts the same voice ran at 2.90 w/s for flowing prose
+    and 2.27 w/s for a dialogue-heavy story, because every line break becomes a
+    spoken pause. The estimate is still used to budget the first draft, but
+    only the synthesized audio settles it -- and checking here, before the
+    encode, is what stops an over-length script being discovered by QA after a
+    full render has already been paid for."""
+    cap = config.VIDEO_MAX_SEC
+    info = synthesize(script["narration"], str(work_dir / "narration.mp3"))
+
+    for attempt in range(attempts + 1):
+        words = len(script["narration"].split())
+        rate = words / info["duration_sec"] if info["duration_sec"] else config.NARRATION_WORDS_PER_SEC
+        print(f"[{run_id}] Narration audio: {info['duration_sec']:.1f}s "
+              f"({words} words, {rate:.2f} w/s)")
+        if info["duration_sec"] <= cap:
+            return info
+        if attempt == attempts:
+            break
+
+        # Target from THIS script's measured rate, with margin for the pauses
+        # that re-editing will not remove.
+        target = int(cap * rate * 0.90)
+        print(f"[{run_id}] Over the {cap:.0f}s cap -- condensing to ~{target} words "
+              f"(attempt {attempt + 1}/{attempts})")
+        shorter = condense_narration(script["narration"], target)
+        if shorter == script["narration"]:
+            print(f"[{run_id}] Narration unchanged; giving up on condensing")
+            break
+        script["narration"] = shorter
+        info = synthesize(script["narration"], str(work_dir / f"narration_fit{attempt}.mp3"))
+
+    print(f"[{run_id}] Still {info['duration_sec']:.1f}s, over the {cap:.0f}s cap; "
+          f"rendering anyway (QA will flag it)")
+    return info
 
 
 def produce_video(post: dict, script: dict, run_id: str = None, audio_override: Path = None) -> dict:
@@ -40,11 +82,15 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
     try:
         (work_dir / "script.json").write_text(json.dumps(script, indent=2))
         words = len(script["narration"].split())
-        est_sec = words / config.NARRATION_WORDS_PER_SEC
-        print(f"[{run_id}] Narration ready: {script.get('hook')} ({words} words, ~{est_sec:.0f}s)")
-        if est_sec > config.VIDEO_MAX_SEC:
-            print(f"[{run_id}] WARNING: ~{est_sec:.0f}s exceeds VIDEO_MAX_SEC={config.VIDEO_MAX_SEC:.0f}s; "
-                  "this will fail QA on duration.")
+        print(f"[{run_id}] Narration ready: {script.get('hook')} ({words} words)")
+
+        # Synthesize before anything expensive: the audio's real length decides
+        # whether the script fits, and condensing here costs seconds where
+        # discovering it at QA costs the whole encode.
+        tts_info = None
+        if not audio_override:
+            tts_info = _fit_narration(script, work_dir, run_id)
+            (work_dir / "script.json").write_text(json.dumps(script, indent=2))
 
         # Decided before the render so the run log records the mood even if a
         # later stage fails, and so a missing-music error surfaces in seconds
@@ -68,7 +114,7 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
         beat = {"voiceover": script["narration"]}
         beat_video_path = render_beat(
             beat, gameplay_clip, work_dir / "beats", 0, card_frames=card_frames,
-            visual_start=gameplay_start, audio_override=audio_override,
+            visual_start=gameplay_start, audio_override=audio_override, tts_info=tts_info,
         )
         print(f"[{run_id}] Rendered")
 
@@ -93,7 +139,11 @@ def produce_video(post: dict, script: dict, run_id: str = None, audio_override: 
                 f"Mood: {story_mood['mood']} ({story_mood['source']}) - music: {track['path'].name}\n\n"
                 # CC BY obliges this to appear in the upload description.
                 f"{('MUSIC CREDIT (must go in the description): ' + music_credit + chr(10) + chr(10)) if music_credit else ''}"
-                f"Source: {post.get('permalink')}\n"
+                f"Source: {post.get('permalink')}\n",
+                # Explicit UTF-8: Windows would otherwise write this in the
+                # system codepage and mangle accented artist names in the
+                # credit line -- which then gets pasted into a description.
+                encoding="utf-8",
             )
             log["status"] = "ready"
             log["output"] = str(dest_video)

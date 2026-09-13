@@ -54,10 +54,12 @@ EDGE_RATE = _require("EDGE_RATE", "+0%")
 # truth -- YouTube Shorts/Reels cap at 180s, TikTok allows far longer.
 VIDEO_MIN_SEC = float(_require("VIDEO_MIN_SEC", "15"))
 VIDEO_MAX_SEC = float(_require("VIDEO_MAX_SEC", "180"))
-# Measured narration rate (Edge en-US-GuyNeural at -5%: 2.67 w/s). Used to
-# budget narration length so long posts get condensed instead of failing QA
-# after a full render.
-NARRATION_WORDS_PER_SEC = float(_require("NARRATION_WORDS_PER_SEC", "2.65"))
+# Rate used to budget the FIRST narration draft only. Deliberately set near
+# the slow end of what's been measured (2.27 w/s on a dialogue-heavy script,
+# 2.90 on flowing prose -- every line break becomes a spoken pause, so no
+# single constant predicts both). The authority on length is the synthesized
+# audio, measured in run_pipeline._fit_narration before the render.
+NARRATION_WORDS_PER_SEC = float(_require("NARRATION_WORDS_PER_SEC", "2.40"))
 
 
 def narration_word_budget(safety: float = 0.88) -> int:

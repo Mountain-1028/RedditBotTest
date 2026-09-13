@@ -68,7 +68,7 @@ def _escape_ffmpeg_filter_path(path: Path) -> str:
 
 def render_beat(
     beat: dict, visual_path: Path, work_dir: Path, index: int, card_frames: tuple = None,
-    visual_start: float = 0.0, audio_override: Path = None,
+    visual_start: float = 0.0, audio_override: Path = None, tts_info: dict = None,
 ) -> Path:
     """Renders the narration over looped footage with burned captions.
 
@@ -82,7 +82,13 @@ def render_beat(
     point each render instead of always playing from frame 0.
 
     audio_override supplies a ready-made narration track (e.g. exported from
-    an external TTS tool) instead of synthesizing one."""
+    an external TTS tool) instead of synthesizing one.
+
+    tts_info reuses narration already synthesized by the caller -- the result
+    dict from tts.synthesize(). The caller needs the audio before the render
+    to check its true length (see run_pipeline._fit_narration), and passing it
+    back in avoids both synthesizing twice and losing the exact word timings
+    that keep captions locked to the speech."""
     work_dir.mkdir(parents=True, exist_ok=True)
     audio_path = work_dir / f"beat_{index:02d}.wav"
     ass_path = work_dir / f"beat_{index:02d}.ass"
@@ -92,6 +98,10 @@ def render_beat(
     if audio_override:
         audio_path = Path(audio_override)
         duration = probe_duration(audio_path)
+    elif tts_info:
+        audio_path = Path(tts_info["path"])
+        duration = tts_info["duration_sec"]
+        words = tts_info.get("words")
     else:
         tts_info = synthesize(beat["voiceover"], str(audio_path))
         # Backends pick their own container (Kokoro wav, Edge mp3).

@@ -10,6 +10,22 @@ import config
 
 _client = None
 
+# The gateway reports upstream failures as a normal 200 completion whose body
+# is a markdown error page, so nothing raises and callers happily use it as
+# model output. That is not theoretical: a 503 page once reached the narration
+# field and was synthesized into a finished video, read aloud. Any response
+# carrying these markers is treated as a failed call.
+_PROXY_ERROR_MARKERS = (
+    "<!-- oai-proxy-error -->",
+    "Proxy error (HTTP",
+    "oai-proxy-error",
+    '"proxy_note"',
+)
+
+
+class GatewayError(RuntimeError):
+    """The gateway returned an error page in place of a completion."""
+
 
 def get_client() -> OpenAI:
     global _client
@@ -41,7 +57,11 @@ def call_llm(model: str, system: str, user: str, max_tokens: int = 1200, tempera
         temperature=temperature,
         **kwargs,
     )
-    return resp.choices[0].message.content
+    content = resp.choices[0].message.content
+    if content and any(m in content for m in _PROXY_ERROR_MARKERS):
+        snippet = " ".join(content.split())[:180]
+        raise GatewayError(f"gateway returned an error page instead of a completion: {snippet}")
+    return content
 
 
 if __name__ == "__main__":

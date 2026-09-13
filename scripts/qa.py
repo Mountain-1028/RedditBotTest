@@ -11,6 +11,7 @@ ready_to_post/:
 """
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import config
@@ -65,19 +66,26 @@ def _parse_verdict(raw: str) -> dict:
     return {"pass": verdict, "issues": issues}
 
 
-def llm_check_script(script: dict, attempts: int = 3) -> dict:
+def llm_check_script(script: dict, attempts: int = 4) -> dict:
+    """QA runs after a full render, so losing it to a momentary gateway blip
+    throws away several minutes of encoding. Attempts are spaced out (2s, 8s,
+    32s) rather than fired back-to-back, which would just land all of them
+    inside the same outage window -- the failure mode this backoff was added
+    for was three instant retries against one 503."""
     last_error = None
-    for _ in range(attempts):
-        raw = call_llm(
-            model=config.LLM_MODEL_QA,
-            system="You are a meticulous content moderator preparing videos for public posting.",
-            user=QA_PROMPT.format(narration=script["narration"]),
-            max_tokens=1500,
-            temperature=0.2,
-        )
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(2 * (4 ** (attempt - 1)))
         try:
+            raw = call_llm(
+                model=config.LLM_MODEL_QA,
+                system="You are a meticulous content moderator preparing videos for public posting.",
+                user=QA_PROMPT.format(narration=script["narration"]),
+                max_tokens=1500,
+                temperature=0.2,
+            )
             return _parse_verdict(raw)
-        except ValueError as e:
+        except Exception as e:  # unparseable verdict, or the gateway being down
             last_error = e
     raise RuntimeError(f"QA model gave no parseable verdict after {attempts} attempts: {last_error}")
 
